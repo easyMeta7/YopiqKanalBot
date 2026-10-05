@@ -416,12 +416,16 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
         )
         return
 
-    # Oddiy obunachi: BITTA xabarda tariflar + aloqa tugmasi (inline).
+    # Oddiy obunachi: avval eski klaviatura o'chiriladi (ReplyKeyboardRemove),
+    # keyin bitta xabarda tariflar + aloqa tugmasi (inline) chiqadi.
     # Tariflar har doim ko'rinadi; aloqa tugmasi faqat
     # ADMIN_CONTACT_USERNAME sozlanganda qo'shiladi.
     await msg.answer(
         "👋 Assalomu alaykum!\n\n"
-        "Bu bot orqali yopiq kanalga obuna bo'lasiz.\n"
+        "Bu bot orqali yopiq kanalga obuna bo'lasiz.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await msg.answer(
         "Quyidagi tarifni tanlang:",
         reply_markup=plans_kb(with_contact=True),
     )
