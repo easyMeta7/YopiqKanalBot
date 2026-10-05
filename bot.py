@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -109,7 +110,56 @@ def init_db() -> None:
             )
             """
         )
+        # Cheklar: har bir chek faqat BIR MARTA hal qilinadi.
+        # INSERT muvaffaqiyati = qulf egallandi (race-condition ga qarshi).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS receipts (
+                rid        TEXT PRIMARY KEY,
+                status     TEXT,
+                admin_id   INTEGER,
+                admin_name TEXT,
+                decided_at TEXT
+            )
+            """
+        )
+        # Eski bazada bu jadval bo'lsa (ustun yo'q) — qo'shishga urinamiz
+        try:
+            conn.execute(
+                "ALTER TABLE receipts ADD COLUMN admin_name TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # ustun allaqachon bor
         conn.commit()
+
+
+def claim_receipt(rid: str, status: str, admin_id: int,
+                  admin_name: str) -> sqlite3.Row | None:
+    """Chekni atomik "egallaydi".
+
+    Birinchi marta chaqirilsa -> INSERT muvaffaqiyatli, None qaytaradi
+    (qulf egallandi, davom etish mumkin).
+    Ikkinchi marta -> IntegrityError, mavjud yozuv qaytariladi
+    (kim/qachon hal qilgani ko'rsatiladi).
+    """
+    now = now_utc().replace(microsecond=0).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO receipts (rid, status, admin_id, admin_name, "
+                "decided_at) VALUES (?,?,?,?,?)",
+                (rid, status, admin_id, admin_name, now),
+            )
+            conn.commit()
+            return None
+        except sqlite3.IntegrityError:
+            return conn.execute(
+                "SELECT * FROM receipts WHERE rid = ?", (rid,)
+            ).fetchone()
+    finally:
+        conn.close()
 
 
 def get_sub(user_id: int) -> sqlite3.Row | None:
@@ -408,6 +458,10 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
     await state.clear()
     price = f"{PLANS[pid]['price']:,}".replace(",", " ")
 
+    # Har bir chek uchun noyob ID — barcha admin nusxalari bitta ID'ga
+    # bog'lanadi, shuning uchun faqat BIRINCHI bosgan hal qiladi.
+    rid = uuid.uuid4().hex[:16]
+
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_photo(
@@ -424,11 +478,11 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
                         [
                             InlineKeyboardButton(
                                 text="✅ Tasdiqlash",
-                                callback_data=f"approve:{msg.from_user.id}:{pid}",
+                                callback_data=f"approve:{rid}:{msg.from_user.id}:{pid}",
                             ),
                             InlineKeyboardButton(
                                 text="❌ Rad etish",
-                                callback_data=f"reject:{msg.from_user.id}",
+                                callback_data=f"reject:{rid}:{msg.from_user.id}",
                             ),
                         ]
                     ]
@@ -458,32 +512,31 @@ def _admin_name(user) -> str:
     return f"{user.full_name} (ID: {user.id})"
 
 
-async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str) -> bool:
-    """Caption'ni yangilaydi va tugmalarni o'chiradi.
+def _decision_word(status: str) -> str:
+    return "Tasdiqlandi" if status == "approved" else "Rad etildi"
 
-    True — bu birinchi javob (amal bajarildi),
-    False — allaqachon javob berilgan (ikkinchi admin bosdi).
+
+def _decision_emoji(status: str) -> str:
+    return "✅" if status == "approved" else "❌"
+
+
+async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str,
+                            by_name: str | None = None) -> None:
+    """Shu admin nusxasini yakuniy holatga o'tkazadi:
+    caption yangilanadi va tugmalar o'chiriladi.
+
+    by_name — qaror qabul qilgan admin (ikkinchi admin nusxasida ham
+    u ko'rsatilishi uchun). None bo'lsa bosgan admin o'zi yoziladi.
     """
-    caption = cb.message.caption or ""
-    if caption.startswith(("✅", "❌", "ℹ️")):
-        # Birinchi admin allaqachon javob bergan
-        await cb.answer(
-            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
-            show_alert=True,
-        )
-        return False
+    who = by_name or _admin_name(cb.from_user)
     try:
-        await cb.message.edit_caption(
-            caption=f"{emoji} {word} — {_admin_name(cb.from_user)}"
-        )
+        await cb.message.edit_caption(caption=f"{emoji} {word} — {who}")
     except Exception:
         pass
-    # Tugmalarni o'chirish — boshqa adminlar bosolmaydi
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    return True
 
 
 @router.callback_query(F.data.startswith("approve:"))
@@ -491,17 +544,30 @@ async def cb_approve(cb: CallbackQuery) -> None:
     if not is_admin(cb.from_user.id):
         await cb.answer("Ruxsat yo'q", show_alert=True)
         return
-    _, uid_s, pid_s = cb.data.split(":")
+    # Format: approve:<rid>:<uid>:<pid>
+    _, rid, uid_s, pid_s = cb.data.split(":")
     uid, pid = int(uid_s), int(pid_s)
     plan = PLANS[pid]
 
-    # Birinchi javobmi? (caption tekshiruvi) — agar allaqachon rad etilgan
-    # bo'lsa tasdiqlashga yo'l qo'ymaymiz
-    caption = cb.message.caption or ""
-    if caption.startswith(("✅", "❌", "ℹ️")):
+    # 1-QADAM: DB darajasida ATOMIK QULF — ishlashdan oldin egallaymiz.
+    # Bu yerga faqat BIRINCHI bosgan admin o'tadi.
+    existing = claim_receipt(
+        rid, "approved", cb.from_user.id, _admin_name(cb.from_user)
+    )
+    if existing is not None:
         await cb.answer(
-            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
+            f"ℹ️ Bu chek allaqachon "
+            f"{_decision_word(existing['status']).lower()} — "
+            f"{existing['admin_name'] or 'boshqa admin'}",
             show_alert=True,
+        )
+        # Bu admin nusxasini ham yakuniy holatga o'tkazamiz
+        # (caption'da QAROR QABUL QILGAN admin ismi ko'rsatiladi)
+        await _finalize_receipt(
+            cb,
+            _decision_emoji(existing["status"]),
+            _decision_word(existing["status"]),
+            by_name=existing["admin_name"],
         )
         return
 
@@ -566,14 +632,29 @@ async def cb_reject(cb: CallbackQuery) -> None:
     if not is_admin(cb.from_user.id):
         await cb.answer("Ruxsat yo'q", show_alert=True)
         return
-    caption = cb.message.caption or ""
-    if caption.startswith(("✅", "❌", "ℹ️")):
+    # Format: reject:<rid>:<uid>
+    _, rid, uid_s = cb.data.split(":")
+    uid = int(uid_s)
+
+    # 1-QADAM: DB darajasida ATOMIK QULF — ishlashdan oldin egallaymiz.
+    existing = claim_receipt(
+        rid, "rejected", cb.from_user.id, _admin_name(cb.from_user)
+    )
+    if existing is not None:
         await cb.answer(
-            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
+            f"ℹ️ Bu chek allaqachon "
+            f"{_decision_word(existing['status']).lower()} — "
+            f"{existing['admin_name'] or 'boshqa admin'}",
             show_alert=True,
         )
+        await _finalize_receipt(
+            cb,
+            _decision_emoji(existing["status"]),
+            _decision_word(existing["status"]),
+            by_name=existing["admin_name"],
+        )
         return
-    uid = int(cb.data.split(":")[1])
+
     try:
         await bot.send_message(
             uid,
