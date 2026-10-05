@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# .env — hech qachon push qilinmaydi (Railway'da env bo'ladi)
+.env
+
+# Baza — Railway Volume'da saqlanadi
+*.db
+*.db-journal
+*.sqlite3
