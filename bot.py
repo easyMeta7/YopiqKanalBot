@@ -237,6 +237,28 @@ class Feedback(StatesGroup):
     text = State()
 
 
+class AddDlg(StatesGroup):
+    """➕ Qo'shish dialog: ID -> kun."""
+    user_id = State()
+    days = State()
+
+
+class TestDlg(StatesGroup):
+    """🧪 Test obuna dialog: ID -> daqiqa."""
+    user_id = State()
+    minutes = State()
+
+
+class KickDlg(StatesGroup):
+    """🗑 Chiqarish dialog: ID."""
+    user_id = State()
+
+
+class LinkDlg(StatesGroup):
+    """🔗 Link dialog: ID."""
+    user_id = State()
+
+
 def status_text(user_id: int) -> str:
     """Obuna holati matni (/obuna buyrug'i uchun)."""
     sub = get_sub(user_id)
@@ -250,12 +272,27 @@ def status_text(user_id: int) -> str:
     )
 
 
-def admin_kb() -> ReplyKeyboardMarkup:
-    """Admin uchun klaviatura ostidagi doimiy tugmalar."""
+def main_kb() -> ReplyKeyboardMarkup:
+    """Admin uchun asosiy klaviatura (1-daraja)."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="👥 Obunachilar ro'yxati"),
              KeyboardButton(text="ℹ️ Buyruqlar")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def commands_kb() -> ReplyKeyboardMarkup:
+    """Buyruqlar klaviaturasi (2-daraja) — dialog paytida ham shu qoladi,
+    shuning uchun ◀️ Orqaga doim ko'rinadi va dialogni bekor qiladi."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Qo'shish"),
+             KeyboardButton(text="🧪 Test obuna")],
+            [KeyboardButton(text="🗑 Chiqarish"),
+             KeyboardButton(text="🔗 Link")],
+            [KeyboardButton(text="◀️ Orqaga")],
         ],
         resize_keyboard=True,
     )
@@ -273,7 +310,7 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
         await msg.answer(
             "👋 Assalomu alaykum, admin!\n\n"
             "Pastdagi tugmalar orqali obunachilarni boshqaring.",
-            reply_markup=admin_kb(),
+            reply_markup=main_kb(),
         )
     await msg.answer(
         "Bu bot orqali yopiq kanalga obuna bo'lasiz.\n"
@@ -283,6 +320,15 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
 
 
 # --- Klaviatura ostidagi admin tugmalari ---
+
+@router.message(F.text == "◀️ Orqaga")
+async def kb_back(msg: Message, state: FSMContext) -> None:
+    """Dialogni bekor qiladi va asosiy menyuga qaytaradi."""
+    if not is_admin(msg.from_user.id):
+        return
+    await state.clear()
+    await msg.answer("Asosiy menyu 👇", reply_markup=main_kb())
+
 
 @router.message(F.text == "👥 Obunachilar ro'yxati")
 async def kb_users(msg: Message) -> None:
@@ -296,13 +342,20 @@ async def kb_help(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
     await msg.answer(
-        "ℹ️ <b>Admin buyruqlari:</b>\n\n"
-        "/users — obunachilar ro'yxati (ID + muddat)\n"
-        "/add &lt;id&gt; &lt;kun&gt; — obuna qo'shish/uzaytirish\n"
-        "/addmin &lt;id&gt; &lt;daqiqa&gt; — test rejimi (muddatni almashtiradi)\n"
-        "/kick &lt;id&gt; — kanaldan chiqarish\n"
-        "/link &lt;id&gt; — invite linkni qayta yuborish\n"
-        "/obuna — obuna holati"
+        "ℹ️ <b>Tugmalar:</b>\n\n"
+        "➕ <b>Qo'shish</b> — obunachilarga obuna qo'shish yoki uzaytirish.\n"
+        "Bosganda: ID so'raydi → necha kun so'raydi → tayyor.\n\n"
+        "🧪 <b>Test obuna</b> — test uchun daqiqalik obuna.\n"
+        "Bosganda: ID so'raydi → necha daqiqa so'raydi → tayyor.\n"
+        "(eski muddatni almashtiradi, uzaytirmaydi)\n\n"
+        "🗑 <b>Chiqarish</b> — foydalanuvchini kanaldan chiqarish.\n"
+        "Bosganda: ID so'raydi → chiqaradi.\n\n"
+        "🔗 <b>Link</b> — invite linkni qayta yuborish.\n"
+        "Bosganda: ID so'raydi → link yuboradi.\n\n"
+        "◀️ <b>Orqaga</b> — asosiy menyuga qaytish.\n"
+        "Dialog paytida bosilsa, dialog bekor bo'ladi.\n\n"
+        "Matn buyruqlari ham ishlaydi: /users, /add, /addmin, /kick, /link, /obuna",
+        reply_markup=commands_kb(),
     )
 
 
@@ -584,6 +637,134 @@ async def cmd_users(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
     await msg.answer(subs_list_text(), disable_web_page_preview=True)
+
+
+# ---------------------------------------------------------------------------
+# Klaviatura dialoglari (2-daraja tugmalar)
+# Eslatma: "◀️ Orqaga" handleri shu bo'limdan OLDIN ro'yxatdan o'tgan,
+# shuning uchun dialog paytida bosilsa ham avval u mos keladi va
+# state.clear() bilan dialogni bekor qiladi.
+# ---------------------------------------------------------------------------
+
+def _need_admin(msg: Message) -> bool:
+    return is_admin(msg.from_user.id)
+
+
+async def _ask_uid(msg: Message, state: FSMContext, new_state: State,
+                   prompt: str) -> None:
+    await state.set_state(new_state)
+    await msg.answer(prompt, reply_markup=commands_kb())
+
+
+@router.message(F.text == "➕ Qo'shish")
+async def kb_add(msg: Message, state: FSMContext) -> None:
+    if not _need_admin(msg):
+        return
+    await _ask_uid(msg, state, AddDlg.user_id,
+                   "🆔 Foydalanuvchi ID raqamini yuboring:")
+
+
+@router.message(AddDlg.user_id)
+async def kb_add_uid(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return
+    await state.update_data(user_id=int(text))
+    await state.set_state(AddDlg.days)
+    await msg.answer("📅 Necha kun qo'shilsin? (masalan: 30)")
+
+
+@router.message(AddDlg.days)
+async def kb_add_days(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit() or int(text) <= 0:
+        await msg.answer("Kun sonini kiriting. Masalan: 30")
+        return
+    data = await state.get_data()
+    uid = data["user_id"]
+    days = int(text)
+    await state.clear()
+    start = now_utc().replace(microsecond=0)
+    end = start + timedelta(days=days)
+    await grant_and_send(uid, start, end, replace=False, msg=msg)
+
+
+@router.message(F.text == "🧪 Test obuna")
+async def kb_test(msg: Message, state: FSMContext) -> None:
+    if not _need_admin(msg):
+        return
+    await _ask_uid(msg, state, TestDlg.user_id,
+                   "🆔 Foydalanuvchi ID raqamini yuboring:")
+
+
+@router.message(TestDlg.user_id)
+async def kb_test_uid(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return
+    await state.update_data(user_id=int(text))
+    await state.set_state(TestDlg.minutes)
+    await msg.answer("⏱ Necha daqiqa? (masalan: 2)\n"
+                     "Eski muddat almashtiriladi, uzaytirilmaydi.")
+
+
+@router.message(TestDlg.minutes)
+async def kb_test_minutes(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit() or int(text) <= 0:
+        await msg.answer("Daqiqa sonini kiriting. Masalan: 2")
+        return
+    data = await state.get_data()
+    uid = data["user_id"]
+    minutes = int(text)
+    await state.clear()
+    start = now_utc().replace(microsecond=0)
+    end = start + timedelta(minutes=minutes)
+    await grant_and_send(uid, start, end, replace=True, msg=msg)
+
+
+@router.message(F.text == "🗑 Chiqarish")
+async def kb_kick(msg: Message, state: FSMContext) -> None:
+    if not _need_admin(msg):
+        return
+    await _ask_uid(msg, state, KickDlg.user_id,
+                   "🆔 Chiqariladigan foydalanuvchi ID raqamini yuboring:")
+
+
+@router.message(KickDlg.user_id)
+async def kb_kick_uid(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return
+    await state.clear()
+    await kick_user(int(text), msg)
+
+
+@router.message(F.text == "🔗 Link")
+async def kb_link(msg: Message, state: FSMContext) -> None:
+    if not _need_admin(msg):
+        return
+    await _ask_uid(msg, state, LinkDlg.user_id,
+                   "🆔 Link yuboriladigan foydalanuvchi ID raqamini yuboring:")
+
+
+@router.message(LinkDlg.user_id)
+async def kb_link_uid(msg: Message, state: FSMContext) -> None:
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return
+    uid = int(text)
+    await state.clear()
+    try:
+        link = await make_invite_link(uid)
+        await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
+        await msg.answer(f"✅ {uid} ga link yuborildi.")
+    except Exception as e:
+        await msg.answer(f"Xato: {e}")
 
 
 # ---------------------------------------------------------------------------
