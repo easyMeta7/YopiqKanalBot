@@ -276,18 +276,33 @@ def fmt_dt(iso: str) -> str:
     return dt.astimezone().strftime("%d.%m.%Y %H:%M")
 
 
-def plans_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def plans_kb(with_contact: bool = False) -> InlineKeyboardMarkup:
+    """Tarif tugmalari. with_contact=True bo'lsa (obunachilar uchun),
+    tagiga "💬 Admin bilan bog'lanish" URL tugmasi qo'shiladi.
+
+    Eslatma: Telegram'da URL tugmalar FAQAT xabar ichidagi (inline)
+    tugmalarda ishlaydi — klaviatura ostidagi KeyboardButton url'ni
+    qo'llamaydi, shuning uchun bu yerda ishlatamiz.
+    """
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{p['name']} — {p['price']:,} so'm".replace(",", " "),
+                callback_data=f"plan:{pid}",
+            )
+        ]
+        for pid, p in PLANS.items()
+    ]
+    if with_contact and ADMIN_CONTACT_USERNAME:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{p['name']} — {p['price']:,} so'm".replace(",", " "),
-                    callback_data=f"plan:{pid}",
+                    text="💬 Admin bilan bog'lanish",
+                    url=f"https://t.me/{ADMIN_CONTACT_USERNAME}",
                 )
             ]
-            for pid, p in PLANS.items()
-        ]
-    )
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ---------------------------------------------------------------------------
@@ -375,23 +390,9 @@ def commands_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def user_kb() -> ReplyKeyboardMarkup | None:
-    """Obunachi (oddiy foydalanuvchi) klaviaturasi.
-
-    ADMIN_CONTACT_USERNAME sozlanmagan bo'lsa None qaytaradi —
-    foydalanuvchida klaviatura bo'lmaydi.
-    """
-    if not ADMIN_CONTACT_USERNAME:
-        return None
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(
-                text="💬 Admin bilan bog'lanish",
-                url=f"https://t.me/{ADMIN_CONTACT_USERNAME}",
-            )],
-        ],
-        resize_keyboard=True,
-    )
+# (user_kb reply-klaviatura olib tashlandi: Telegram'da KeyboardButton
+# url'ni qo'llamaydi, shuning uchun aloqa tugmasi faqat plans_kb()
+# ichidagi inline qator sifatida ishlaydi)
 
 
 # ---------------------------------------------------------------------------
@@ -415,22 +416,15 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
         )
         return
 
-    # Oddiy obunachi: admin bilan bog'lanish tugmasi + tariflar
+    # Oddiy obunachi: BITTA xabarda tariflar + aloqa tugmasi (inline).
+    # Tariflar har doim ko'rinadi; aloqa tugmasi faqat
+    # ADMIN_CONTACT_USERNAME sozlanganda qo'shiladi.
     await msg.answer(
         "👋 Assalomu alaykum!\n\n"
         "Bu bot orqali yopiq kanalga obuna bo'lasiz.\n"
         "Quyidagi tarifni tanlang:",
-        reply_markup=plans_kb() if not user_kb() else None,
+        reply_markup=plans_kb(with_contact=True),
     )
-    kb = user_kb()
-    if kb:
-        # Klaviaturani alohida xabar bilan chiqaramiz (inline + reply
-        # bir xabarda bo'lmaydi)
-        await msg.answer(
-            "Savol bo'lsa — pastdagi tugma orqali admin bilan "
-            "bog'lanishingiz mumkin.",
-            reply_markup=kb,
-        )
 
 
 # --- Klaviatura ostidagi admin tugmalari ---
@@ -726,7 +720,7 @@ async def cb_reject(cb: CallbackQuery) -> None:
 async def cb_resub(cb: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await cb.message.answer(
-        "Qaysi tarifni tanlaysiz?", reply_markup=plans_kb()
+        "Qaysi tarifni tanlaysiz?", reply_markup=plans_kb(with_contact=True)
     )
     await cb.answer()
 
