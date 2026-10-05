@@ -60,6 +60,13 @@ if not any(num for _, num in CARDS) and os.getenv("CARD_NUMBER"):
     CARDS = [("💳 Karta", os.getenv("CARD_NUMBER", ""))]
 CHECK_INTERVAL_SEC = int(os.getenv("CHECK_INTERVAL_SEC", "600"))
 DB_PATH = os.getenv("DB_PATH", "bot.db")
+# Admin bilan bog'lanish (obunachilar uchun URL tugma), masalan "musokamronbek"
+ADMIN_CONTACT_USERNAME = os.getenv("ADMIN_CONTACT_USERNAME", "").lstrip("@")
+
+# DB papkasini avtomatik yaratish (masalan Railway'da /data bo'sh bo'lsa)
+_db_dir = os.path.dirname(DB_PATH)
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
 
 # Tariflar - narxlarni o'zingizga moslang
 PLANS = {
@@ -368,6 +375,25 @@ def commands_kb() -> ReplyKeyboardMarkup:
     )
 
 
+def user_kb() -> ReplyKeyboardMarkup | None:
+    """Obunachi (oddiy foydalanuvchi) klaviaturasi.
+
+    ADMIN_CONTACT_USERNAME sozlanmagan bo'lsa None qaytaradi —
+    foydalanuvchida klaviatura bo'lmaydi.
+    """
+    if not ADMIN_CONTACT_USERNAME:
+        return None
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(
+                text="💬 Admin bilan bog'lanish",
+                url=f"https://t.me/{ADMIN_CONTACT_USERNAME}",
+            )],
+        ],
+        resize_keyboard=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Foydalanuvchi buyruqlari
 # ---------------------------------------------------------------------------
@@ -375,18 +401,36 @@ def commands_kb() -> ReplyKeyboardMarkup:
 @router.message(CommandStart())
 async def cmd_start(msg: Message, state: FSMContext) -> None:
     await state.clear()
-    # Admin uchun klaviatura ostiga tugmalar chiqadi
     if is_admin(msg.from_user.id):
+        # Admin uchun klaviatura ostiga tugmalar chiqadi
         await msg.answer(
             "👋 Assalomu alaykum, admin!\n\n"
             "Pastdagi tugmalar orqali obunachilarni boshqaring.",
             reply_markup=main_kb(),
         )
+        await msg.answer(
+            "Bu bot orqali yopiq kanalga obuna bo'lasiz.\n"
+            "Quyidagi tarifni tanlang:",
+            reply_markup=plans_kb(),
+        )
+        return
+
+    # Oddiy obunachi: admin bilan bog'lanish tugmasi + tariflar
     await msg.answer(
+        "👋 Assalomu alaykum!\n\n"
         "Bu bot orqali yopiq kanalga obuna bo'lasiz.\n"
         "Quyidagi tarifni tanlang:",
-        reply_markup=plans_kb(),
+        reply_markup=plans_kb() if not user_kb() else None,
     )
+    kb = user_kb()
+    if kb:
+        # Klaviaturani alohida xabar bilan chiqaramiz (inline + reply
+        # bir xabarda bo'lmaydi)
+        await msg.answer(
+            "Savol bo'lsa — pastdagi tugma orqali admin bilan "
+            "bog'lanishingiz mumkin.",
+            reply_markup=kb,
+        )
 
 
 # --- Klaviatura ostidagi admin tugmalari ---
@@ -1080,6 +1124,13 @@ async def main() -> None:
         raise SystemExit("CHANNEL_ID va ADMIN_IDS ni .env da kiriting.")
 
     init_db()
+    n_subs = len(all_subs())
+    log.info("DB: %s — obunachilar soni: %s", os.path.abspath(DB_PATH), n_subs)
+    if not ADMIN_CONTACT_USERNAME:
+        log.warning(
+            "ADMIN_CONTACT_USERNAME kiritilmagan — "
+            "'Admin bilan bog'lanish' tugmasi ko'rinmaydi."
+        )
     await on_startup()
     asyncio.create_task(checker_loop())
     log.info("Bot ishga tushdi (tekshiruv har %s soniyada)", CHECK_INTERVAL_SEC)

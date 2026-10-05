@@ -8,6 +8,7 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 - Muddat tugashidan 3 kun va 1 kun oldin eslatma
 - Muddat tugaganda kanaldan chiqarish + "Qayta obuna / Fikr bildirish" tugmalari
 - Admin buyruqlari: obunachilar ro'yxati (ID + muddat), ID bo'yicha chiqarish
+- Obunachilarda "💬 Admin bilan bog'lanish" tugmasi (shaxsiy chatga URL)
 
 ## Buyruqlar
 
@@ -43,8 +44,15 @@ python bot.py
    - `CARD_OWNER` — karta egasi
    - `CHECK_INTERVAL_SEC` — `600`
    - `DB_PATH` — `/data/bot.db`
-4. **Volumes** → *New Volume* → mount point: `/data`
-   (aks holda har deploy'da `bot.db` yo'qoladi!)
+   - `ADMIN_CONTACT_USERNAME` — obunachilarga chiqadigan
+     "💬 Admin bilan bog'lanish" tugmasi (username, `@` sizsiz)
+4. ⚠️ **ENG MUHIM QADAM — Volume (obunachilar saqlanishi uchun):**
+   - Settings → **Volumes** → *New Volume* → mount path: **`/data`**
+   - `DB_PATH=/data/bot.db` bilan **birgalikda** ishlaydi — ikkisi ham shart
+   - Aks holda har deploy'da `bot.db` (obunachilar bazasi) yo'qoladi
+   - Tekshirish: Logs'da `DB: /data/bot.db — obunachilar soni: N`
+     chiqishi kerak. `bot.db` da chiqsa (papka ichida) — Volume ulanmagan
+   - Railway'da Volume **Starter+ plan**da mavjud
 5. Bot kanalga **admin** qiling: ruxsatlar *Invite users via link* + *Ban users*
 
 Loyihaning eski versioni bilan aralashtirmaslik uchun Railway'da **aloqida yangi project** yarating — "Deploy from GitHub repo" repositoriya tanlashda yangi repo bo'ladi.
