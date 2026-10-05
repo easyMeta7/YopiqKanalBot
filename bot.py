@@ -6,7 +6,7 @@ Asosiy funksiyalar:
   - To'lov (Variant B): chek skrinshoti -> admin tasdiqlashi -> bir martalik invite link
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
   - Muddat tugaganda kanaldan chiqarish + "Qayta obuna / Fikr bildirish" tugmalari
-  - Admin panel: /panel -> obunachilar ro'yxati (ID + muddat), ID bo'yicha chiqarish
+  - Admin buyruqlari: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
   - /add <id> <kun>      - obuna qo'shish/uzaytirish
   - /addmin <id> <daqiqa> - test rejimi (eski muddatni ALMASHTIRADI)
   - /kick <id>           - foydalanuvchini kanaldan chiqarish
@@ -237,10 +237,6 @@ class Feedback(StatesGroup):
     text = State()
 
 
-class KickState(StatesGroup):  # panel orqali chiqarish
-    user_id = State()
-
-
 def status_text(user_id: int) -> str:
     """Obuna holati matni (/obuna buyrug'i uchun)."""
     sub = get_sub(user_id)
@@ -272,7 +268,7 @@ def admin_kb() -> ReplyKeyboardMarkup:
 @router.message(CommandStart())
 async def cmd_start(msg: Message, state: FSMContext) -> None:
     await state.clear()
-    # Admin uchun klaviatura ostiga panel tugmalari chiqadi
+    # Admin uchun klaviatura ostiga tugmalar chiqadi
     if is_admin(msg.from_user.id):
         await msg.answer(
             "👋 Assalomu alaykum, admin!\n\n"
@@ -301,7 +297,6 @@ async def kb_help(msg: Message) -> None:
         return
     await msg.answer(
         "ℹ️ <b>Admin buyruqlari:</b>\n\n"
-        "/panel — admin panel (tugmalar)\n"
         "/users — obunachilar ro'yxati (ID + muddat)\n"
         "/add &lt;id&gt; &lt;kun&gt; — obuna qo'shish/uzaytirish\n"
         "/addmin &lt;id&gt; &lt;daqiqa&gt; — test rejimi (muddatni almashtiradi)\n"
@@ -592,7 +587,7 @@ async def cmd_users(msg: Message) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Admin panel (tugmalar)
+# Admin yordamchi funksiyalari
 # ---------------------------------------------------------------------------
 
 async def kick_user(uid: int, msg: Message) -> None:
@@ -625,75 +620,6 @@ def subs_list_text() -> str:
             f"muddat: {fmt_dt(r['end_at'])}"
         )
     return "\n".join(lines)
-
-
-@router.message(Command("panel"))
-async def cmd_panel(msg: Message, state: FSMContext) -> None:
-    if not is_admin(msg.from_user.id):
-        return
-    await state.clear()
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👥 Obunachilar ro'yxati",
-                                  callback_data="panel_users")],
-            [InlineKeyboardButton(text="🗑 Userni chiqarish (ID)",
-                                  callback_data="panel_kick")],
-            [InlineKeyboardButton(text="ℹ️ Buyruqlar",
-                                  callback_data="panel_help")],
-        ]
-    )
-    await msg.answer("🛠 <b>Admin panel</b>", reply_markup=kb)
-
-
-@router.callback_query(F.data == "panel_users")
-async def panel_users(cb: CallbackQuery) -> None:
-    if not is_admin(cb.from_user.id):
-        await cb.answer("Ruxsat yo'q", show_alert=True)
-        return
-    await cb.answer()
-    await cb.message.answer(subs_list_text(), disable_web_page_preview=True)
-
-
-@router.callback_query(F.data == "panel_kick")
-async def panel_kick(cb: CallbackQuery, state: FSMContext) -> None:
-    if not is_admin(cb.from_user.id):
-        await cb.answer("Ruxsat yo'q", show_alert=True)
-        return
-    await state.set_state(KickState.user_id)
-    await cb.message.answer(
-        "Chiqariladigan foydalanuvchining ID raqamini yuboring:"
-    )
-    await cb.answer()
-
-
-@router.message(KickState.user_id)
-async def panel_kick_id(msg: Message, state: FSMContext) -> None:
-    if not is_admin(msg.from_user.id):
-        return
-    await state.clear()
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
-        return
-    await kick_user(int(text), msg)
-
-
-@router.callback_query(F.data == "panel_help")
-async def panel_help(cb: CallbackQuery) -> None:
-    if not is_admin(cb.from_user.id):
-        await cb.answer("Ruxsat yo'q", show_alert=True)
-        return
-    await cb.answer()
-    await cb.message.answer(
-        "ℹ️ <b>Admin buyruqlari:</b>\n\n"
-        "/panel — admin panel (tugmalar)\n"
-        "/users — obunachilar ro'yxati (ID + muddat)\n"
-        "/add &lt;id&gt; &lt;kun&gt; — obuna qo'shish/uzaytirish\n"
-        "/addmin &lt;id&gt; &lt;daqiqa&gt; — test rejimi (muddatni almashtiradi)\n"
-        "/kick &lt;id&gt; — kanaldan chiqarish\n"
-        "/link &lt;id&gt; — invite linkni qayta yuborish\n"
-        "/obuna — obuna holati"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -793,7 +719,6 @@ async def on_startup() -> None:
         [
             BotCommand(command="start", description="Boshlash / tarif tanlash"),
             BotCommand(command="obuna", description="Obuna holati"),
-            BotCommand(command="panel", description="Admin panel"),
             BotCommand(command="users", description="Obunachilar ro'yxati (admin)"),
         ]
     )

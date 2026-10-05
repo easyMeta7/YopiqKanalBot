@@ -7,7 +7,7 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 - To'lov (Variant B): chek skrinshoti → admin tasdiqlashi → bir martalik invite link
 - Muddat tugashidan 3 kun va 1 kun oldin eslatma
 - Muddat tugaganda kanaldan chiqarish + "Qayta obuna / Fikr bildirish" tugmalari
-- Admin panel: obunachilar ro'yxati (ID + muddat), ID bo'yicha chiqarish
+- Admin buyruqlari: obunachilar ro'yxati (ID + muddat), ID bo'yicha chiqarish
 
 ## Buyruqlar
 
@@ -15,7 +15,6 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 |---|---|---|
 | `/start` | hamma | Boshlash / tarif tanlash |
 | `/obuna` | hamma | Obuna holati |
-| `/panel` | admin | Admin panel (tugmalar) |
 | `/users` | admin | Obunachilar ro'yxati |
 | `/add <id> <kun>` | admin | Obuna qo'shish/uzaytirish |
 | `/addmin <id> <daqiqa>` | admin | Test rejimi (muddatni almashtiradi) |
