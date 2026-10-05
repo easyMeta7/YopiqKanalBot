@@ -39,7 +39,8 @@ python bot.py
    - `BOT_TOKEN` — @BotFather tokeni
    - `CHANNEL_ID` — `-100...` ko'rinishida
    - `ADMIN_IDS` — sizning Telegram ID ingiz
-   - `CARD_NUMBER`, `CARD_OWNER` — karta ma'lumotlari
+   - `CARD_VISA`, `CARD_HUMO`, `CARD_UZCARD` — 3 ta karta raqami
+   - `CARD_OWNER` — karta egasi
    - `CHECK_INTERVAL_SEC` — `600`
    - `DB_PATH` — `/data/bot.db`
 4. **Volumes** → *New Volume* → mount point: `/data`

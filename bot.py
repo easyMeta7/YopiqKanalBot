@@ -47,8 +47,16 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 ADMIN_IDS = [
     int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x
 ]
-CARD_NUMBER = os.getenv("CARD_NUMBER", "8600 0000 0000 0000")
 CARD_OWNER = os.getenv("CARD_OWNER", "Karta egasi")
+# 3 ta karta: Visa / Humo / Uzcard
+CARDS = [
+    ("💳 Visa", os.getenv("CARD_VISA", "")),
+    ("💳 Humo", os.getenv("CARD_HUMO", "")),
+    ("💳 Uzcard", os.getenv("CARD_UZCARD", "")),
+]
+# Eskisini qo'llab-quvvatlash: CARD_NUMBER bo'lsa Visa'ga yoziladi
+if not any(num for _, num in CARDS) and os.getenv("CARD_NUMBER"):
+    CARDS = [("💳 Karta", os.getenv("CARD_NUMBER", ""))]
 CHECK_INTERVAL_SEC = int(os.getenv("CHECK_INTERVAL_SEC", "600"))
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 
@@ -259,6 +267,18 @@ class LinkDlg(StatesGroup):
     user_id = State()
 
 
+def cards_text() -> str:
+    """3 ta karta (Visa/Humo/Uzcard) ro'yxati."""
+    lines = []
+    for name, number in CARDS:
+        if number:
+            lines.append(f"{name}: <code>{number}</code>")
+    if not lines:
+        lines.append(f"Karta: <code>{os.getenv('CARD_NUMBER', '')}</code>")
+    lines.append(f"Karta egasi: {CARD_OWNER}")
+    return "\n".join(lines)
+
+
 def status_text(user_id: int) -> str:
     """Obuna holati matni (/obuna buyrug'i uchun)."""
     sub = get_sub(user_id)
@@ -375,8 +395,7 @@ async def cb_plan(cb: CallbackQuery, state: FSMContext) -> None:
     price = f"{PLANS[pid]['price']:,}".replace(",", " ")
     await cb.message.answer(
         f"💳 <b>{PLANS[pid]['name']}</b> — {price} so'm\n\n"
-        f"Karta: <code>{CARD_NUMBER}</code>\n"
-        f"Karta egasi: {CARD_OWNER}\n\n"
+        f"{cards_text()}\n\n"
         f"To'lovdan keyin chek skrinshotini shu yerga yuboring."
     )
     await cb.answer()
@@ -432,6 +451,41 @@ async def not_photo(msg: Message) -> None:
 # Tasdiqlash / rad etish
 # ---------------------------------------------------------------------------
 
+def _admin_name(user) -> str:
+    """Tasdiqlagan admin nomi: @username yoki ism familiya (ID)."""
+    if user.username:
+        return f"@{user.username}"
+    return f"{user.full_name} (ID: {user.id})"
+
+
+async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str) -> bool:
+    """Caption'ni yangilaydi va tugmalarni o'chiradi.
+
+    True — bu birinchi javob (amal bajarildi),
+    False — allaqachon javob berilgan (ikkinchi admin bosdi).
+    """
+    caption = cb.message.caption or ""
+    if caption.startswith(("✅", "❌", "ℹ️")):
+        # Birinchi admin allaqachon javob bergan
+        await cb.answer(
+            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
+            show_alert=True,
+        )
+        return False
+    try:
+        await cb.message.edit_caption(
+            caption=f"{emoji} {word} — {_admin_name(cb.from_user)}"
+        )
+    except Exception:
+        pass
+    # Tugmalarni o'chirish — boshqa adminlar bosolmaydi
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    return True
+
+
 @router.callback_query(F.data.startswith("approve:"))
 async def cb_approve(cb: CallbackQuery) -> None:
     if not is_admin(cb.from_user.id):
@@ -440,6 +494,16 @@ async def cb_approve(cb: CallbackQuery) -> None:
     _, uid_s, pid_s = cb.data.split(":")
     uid, pid = int(uid_s), int(pid_s)
     plan = PLANS[pid]
+
+    # Birinchi javobmi? (caption tekshiruvi) — agar allaqachon rad etilgan
+    # bo'lsa tasdiqlashga yo'l qo'ymaymiz
+    caption = cb.message.caption or ""
+    if caption.startswith(("✅", "❌", "ℹ️")):
+        await cb.answer(
+            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
+            show_alert=True,
+        )
+        return
 
     start = now_utc().replace(microsecond=0)
     end = start + timedelta(days=plan["days"])
@@ -477,18 +541,37 @@ async def cb_approve(cb: CallbackQuery) -> None:
         )
 
     await cb.answer("✅ Tasdiqlandi")
-    try:
-        await cb.message.edit_caption(
-            caption=f"✅ Tasdiqlandi — {uid} ({plan['name']})"
-        )
-    except Exception:
-        pass
+    await _finalize_receipt(cb, "✅", "Tasdiqlandi")
+
+    # Boshqa adminlarga xabar: kim tasdiqladi
+    await _notify_other_admins(
+        cb.from_user.id,
+        f"✅ Chek tasdiqlandi — {_admin_name(cb.from_user)}\n"
+        f"Foydalanuvchi: {uid} ({plan['name']})",
+    )
+
+
+async def _notify_other_admins(except_id: int, text: str) -> None:
+    for admin_id in ADMIN_IDS:
+        if admin_id == except_id:
+            continue
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("reject:"))
 async def cb_reject(cb: CallbackQuery) -> None:
     if not is_admin(cb.from_user.id):
         await cb.answer("Ruxsat yo'q", show_alert=True)
+        return
+    caption = cb.message.caption or ""
+    if caption.startswith(("✅", "❌", "ℹ️")):
+        await cb.answer(
+            f"ℹ️ Bu chek allaqachon ko'rib chiqilgan: {caption.splitlines()[0]}",
+            show_alert=True,
+        )
         return
     uid = int(cb.data.split(":")[1])
     try:
@@ -500,10 +583,14 @@ async def cb_reject(cb: CallbackQuery) -> None:
     except Exception:
         pass
     await cb.answer("❌ Rad etildi")
-    try:
-        await cb.message.edit_caption(caption=f"❌ Rad etildi — {uid}")
-    except Exception:
-        pass
+    await _finalize_receipt(cb, "❌", "Rad etildi")
+
+    # Boshqa adminlarga xabar: kim rad etdi
+    await _notify_other_admins(
+        cb.from_user.id,
+        f"❌ Chek rad etildi — {_admin_name(cb.from_user)}\n"
+        f"Foydalanuvchi: {uid}",
+    )
 
 
 # ---------------------------------------------------------------------------
