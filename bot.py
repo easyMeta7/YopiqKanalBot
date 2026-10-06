@@ -9,6 +9,8 @@ Asosiy funksiyalar:
   - Admin buyruqlari: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
   - /add <id> <kun>      - obuna qo'shish/uzaytirish
   - /addmin <id> <daqiqa> - test rejimi (eski muddatni ALMASHTIRADI)
+  - /import <id> <sana>   - eski kanal a'zosini qo'shish (sana: 31-12-2025
+                            yoki 2025-12-31, shuningdek nuqta bilan)
   - /kick <id>           - foydalanuvchini kanaldan chiqarish
   - /link <id>           - invite linkni qayta yuborish
 """
@@ -31,6 +33,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
+    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -62,6 +65,13 @@ CHECK_INTERVAL_SEC = int(os.getenv("CHECK_INTERVAL_SEC", "600"))
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 # Admin bilan bog'lanish (obunachilar uchun URL tugma), masalan "musokamronbek"
 ADMIN_CONTACT_USERNAME = os.getenv("ADMIN_CONTACT_USERNAME", "").lstrip("@")
+
+# Backup: qayerga yuboriladi (boshqa kanal IDsi, masalan -100...)
+BACKUP_CHAT_ID = int(os.getenv("BACKUP_CHAT_ID", "0"))
+# Backup oralig'i (soat) — standart 6 soat
+BACKUP_INTERVAL_HOURS = int(os.getenv("BACKUP_INTERVAL_HOURS", "6"))
+# Tarix saqlash muddati (kun) — 90 kundan eski yozuvlar o'chiriladi
+RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "90"))
 
 # DB papkasini avtomatik yaratish (masalan Railway'da /data bo'sh bo'lsa)
 _db_dir = os.path.dirname(DB_PATH)
@@ -126,17 +136,21 @@ def init_db() -> None:
                 status     TEXT,
                 admin_id   INTEGER,
                 admin_name TEXT,
+                photo_uid  TEXT,
                 decided_at TEXT
             )
             """
         )
-        # Eski bazada bu jadval bo'lsa (ustun yo'q) — qo'shishga urinamiz
-        try:
-            conn.execute(
-                "ALTER TABLE receipts ADD COLUMN admin_name TEXT"
-            )
-        except sqlite3.OperationalError:
-            pass  # ustun allaqachon bor
+        # Eski bazada bu jadval bo'lsa (ustunlar yo'q) — qo'shishga urinamiz
+        for _col in ("admin_name TEXT", "photo_uid TEXT"):
+            try:
+                conn.execute(f"ALTER TABLE receipts ADD COLUMN {_col}")
+            except sqlite3.OperationalError:
+                pass  # ustun allaqachon bor
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_receipts_photo "
+            "ON receipts(photo_uid)"
+        )
         conn.commit()
 
 
@@ -144,29 +158,55 @@ def claim_receipt(rid: str, status: str, admin_id: int,
                   admin_name: str) -> sqlite3.Row | None:
     """Chekni atomik "egallaydi".
 
-    Birinchi marta chaqirilsa -> INSERT muvaffaqiyatli, None qaytaradi
-    (qulf egallandi, davom etish mumkin).
-    Ikkinchi marta -> IntegrityError, mavjud yozuv qaytariladi
-    (kim/qachon hal qilgani ko'rsatiladi).
+    Oldindan 'pending' sifatida ro'yxatga olingan rid faqat BIR MARTA
+    yakuniy statusga o'tadi (race-condition ga qarshi atomik UPDATE).
+    Birinchi marta -> None (qulf egallandi, davom etish mumkin).
+    Ikkinchi marta -> mavjud yozuv (rad etish uchun kim/qachon ko'rsatiladi).
     """
     now = now_utc().replace(microsecond=0).isoformat()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        try:
-            conn.execute(
-                "INSERT INTO receipts (rid, status, admin_id, admin_name, "
-                "decided_at) VALUES (?,?,?,?,?)",
-                (rid, status, admin_id, admin_name, now),
-            )
-            conn.commit()
+        cur = conn.execute(
+            "UPDATE receipts SET status=?, admin_id=?, admin_name=?, "
+            "decided_at=? WHERE rid=? AND status='pending'",
+            (status, admin_id, admin_name, now, rid),
+        )
+        conn.commit()
+        if cur.rowcount == 1:
             return None
-        except sqlite3.IntegrityError:
-            return conn.execute(
-                "SELECT * FROM receipts WHERE rid = ?", (rid,)
-            ).fetchone()
+        return conn.execute(
+            "SELECT * FROM receipts WHERE rid = ?", (rid,)
+        ).fetchone()
     finally:
         conn.close()
+
+
+def register_receipt(rid: str, photo_uid: str) -> None:
+    """Chekni 'pending' sifatida oldindan ro'yxatga oladi (qulf uchun)."""
+    with db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO receipts (rid, status, photo_uid) "
+            "VALUES (?, 'pending', ?)",
+            (rid, photo_uid),
+        )
+
+
+def find_duplicate_receipt(photo_uid: str, exclude_rid: str) -> sqlite3.Row | None:
+    """Xuddi shu fayl bo'yicha avval kelgan chek bormi?
+    (file_unique_id — Telegram'ning fayl "barmoq izi", tahrirlanmagan
+    bir xil surat har doim bir xil bo'ladi.)
+
+    exclude_rid — joriy chek (o'zi bilan solishtirmaslik uchun).
+    """
+    if not photo_uid:
+        return None
+    with db() as conn:
+        return conn.execute(
+            "SELECT * FROM receipts WHERE photo_uid = ? AND rid != ? "
+            "AND status != 'pending' ORDER BY decided_at DESC LIMIT 1",
+            (photo_uid, exclude_rid),
+        ).fetchone()
 
 
 def get_sub(user_id: int) -> sqlite3.Row | None:
@@ -274,6 +314,31 @@ async def remove_from_channel(user_id: int) -> None:
 def fmt_dt(iso: str) -> str:
     dt = datetime.fromisoformat(iso)
     return dt.astimezone().strftime("%d.%m.%Y %H:%M")
+
+
+def parse_import_date(s: str) -> datetime | None:
+    """Import sanasini o'qiydi. 4 format:
+    31-12-2025 (kun-oy-yil), 2025-12-31 (yil-oy-kun),
+    31.12.2025, 2025.12.31.
+    Muddat kuni soat 23:59 (UTC) qilib qaytaradi.
+    """
+    s = (s or "").strip()
+    sep = "-" if "-" in s else ("." if "." in s else None)
+    if not sep:
+        return None
+    parts = s.split(sep)
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    try:
+        if len(parts[0]) == 4:  # yil-oy-kun
+            y, m, d = (int(parts[0]), int(parts[1]), int(parts[2]))
+        elif len(parts[2]) == 4:  # kun-oy-yil
+            d, m, y = (int(parts[0]), int(parts[1]), int(parts[2]))
+        else:
+            return None
+        return datetime(y, m, d, 23, 59, tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def plans_kb(with_contact: bool = False) -> InlineKeyboardMarkup:
@@ -466,7 +531,8 @@ async def kb_help(msg: Message) -> None:
         "Bosganda: ID so'raydi → link yuboradi.\n\n"
         "◀️ <b>Orqaga</b> — asosiy menyuga qaytish.\n"
         "Dialog paytida bosilsa, dialog bekor bo'ladi.\n\n"
-        "Matn buyruqlari ham ishlaydi: /users, /add, /addmin, /kick, /link, /obuna",
+        "Matn buyruqlari ham ishlaydi: /users, /add, /addmin, /import,"
+        " /kick, /link, /obuna",
         reply_markup=commands_kb(),
     )
 
@@ -503,6 +569,22 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
     # Har bir chek uchun noyob ID — barcha admin nusxalari bitta ID'ga
     # bog'lanadi, shuning uchun faqat BIRINCHI bosgan hal qiladi.
     rid = uuid.uuid4().hex[:16]
+    photo_uid = msg.photo[-1].file_unique_id or ""
+
+    # Chekni oldindan "pending" sifatida ro'yxatga olamiz (rish uchun qulf).
+    register_receipt(rid, photo_uid)
+
+    # Duplikat tekshiruvi: avval aynan shu fayl kelganmi?
+    dup = find_duplicate_receipt(photo_uid, exclude_rid=rid)
+    if dup is not None:
+        dup_word = "Tasdiqlandi" if dup["status"] == "approved" else "Rad etildi"
+        dup_info = (
+            f"⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham kelgan — "
+            f"{dup_word.lower()} ({dup['admin_name'] or 'admin'}, "
+            f"{fmt_dt(dup['decided_at'])})."
+        )
+    else:
+        dup_info = ""
 
     for admin_id in ADMIN_IDS:
         try:
@@ -510,7 +592,8 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
                 chat_id=admin_id,
                 photo=msg.photo[-1].file_id,
                 caption=(
-                    f"🧾 Yangi chek!\n"
+                    (dup_info + "\n\n" if dup_info else "")
+                    + f"🧾 Yangi chek!\n"
                     f"Foydalanuvchi: {msg.from_user.id} "
                     f"(@{msg.from_user.username or '-'})\n"
                     f"Tarif: {PLANS[pid]['name']} — {price} so'm"
@@ -849,6 +932,49 @@ async def cmd_users(msg: Message) -> None:
     await msg.answer(subs_list_text(), disable_web_page_preview=True)
 
 
+@router.message(Command("import"))
+async def cmd_import(msg: Message) -> None:
+    """Eski kanal a'zolarini qo'shish (bitta user).
+
+    Foydalanish: /import <user_id> <sana>
+    Sana formatlari: 31-12-2025, 2025-12-31, 31.12.2025, 2025.12.31.
+    Sana — obuna TUGASH muddati (shu kun 23:59 gacha faol).
+    """
+    if not is_admin(msg.from_user.id):
+        return
+    parts = (msg.text or "").split()
+    if len(parts) != 3 or not parts[1].isdigit():
+        await msg.answer(
+            "Foydalanish:\n"
+            "/import &lt;user_id&gt; &lt;sana&gt;\n\n"
+            "Sana — obuna TUGASH muddati. Misollar:\n"
+            "/import 123456789 31-12-2025\n"
+            "/import 123456789 2025-12-31\n"
+            "/import 123456789 31.12.2025\n"
+            "/import 123456789 2025.12.31"
+        )
+        return
+    uid = int(parts[1])
+    end = parse_import_date(parts[2])
+    if end is None:
+        await msg.answer(
+            "❌ Sana noto'g'ri. Formatlar: 31-12-2025, 2025-12-31, "
+            "31.12.2025, 2025.12.31"
+        )
+        return
+    start = now_utc().replace(microsecond=0)
+    if start >= end:
+        await msg.answer(
+            f"⚠️ Sana o'tmishda ({fmt_dt(end.isoformat())}) — "
+            f"obuna tugagan sifatida yoziladi."
+        )
+    # Import — aniq muddat qo'yiladi (uzaytirish emas, almashtirish)
+    upsert_sub(uid, None, start, end, replace=True)
+    await msg.answer(
+        f"📥 {uid} import qilindi. Muddat: {fmt_dt(end.isoformat())}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Klaviatura dialoglari (2-daraja tugmalar)
 # Eslatma: "◀️ Orqaga" handleri shu bo'limdan OLDIN ro'yxatdan o'tgan,
@@ -1101,6 +1227,75 @@ async def checker_loop() -> None:
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
 
+async def cleanup_and_backup_loop() -> None:
+    """90 kunlik saqlash + har 6 soatda backup.
+
+    BACKUP_CHAT_ID sozlanmagan bo'lsa, faqat tozalash ishlaydi
+    (backup o'tkazib yuboriladi).
+    """
+    first_run = True
+    while True:
+        if not first_run:
+            await asyncio.sleep(BACKUP_INTERVAL_HOURS * 3600)
+        first_run = False
+        try:
+            await run_cleanup()
+        except Exception as e:
+            log.error("Tozalashda xato: %s", e)
+        try:
+            await run_backup()
+        except Exception as e:
+            log.error("Backup'da xato: %s", e)
+
+
+async def run_cleanup() -> None:
+    """RETENTION_DAYS (90 kun) dan eski yozuvlarni o'chiradi.
+
+    bot.db — obunachilar (subs) va cheklar tarixi (receipts) joylashgan
+    yagona fayl. Railway'da /data Volume 500 MB chegarasi,
+    shuning uchun eski tarix avtomatik o'chiriladi.
+    """
+    cutoff = now_utc() - timedelta(days=RETENTION_DAYS)
+    cutoff_iso = cutoff.replace(microsecond=0).isoformat()
+    with db() as conn:
+        n_subs = conn.execute(
+            "DELETE FROM subs WHERE end_at < ? AND expired_msg = 1",
+            (cutoff_iso,),
+        ).rowcount
+        n_receipts = conn.execute(
+            "DELETE FROM receipts WHERE decided_at IS NOT NULL "
+            "AND decided_at < ?",
+            (cutoff_iso,),
+        ).rowcount
+        conn.execute("VACUUM")
+        conn.commit()
+    log.info(
+        "Tozalash: %s o'chirilgan obunachi + %s chek (%s kundan eski)",
+        n_subs, n_receipts, RETENTION_DAYS,
+    )
+
+
+async def run_backup() -> None:
+    """bot.db ni BACKUP_CHAT_ID (boshqa kanal) ga yuboradi.
+
+    bot.db — obunachilar va umumiy tarix joylashgan YAGONA fayl,
+    shuning uchun backup shu faylning nusxasi.
+
+    Bot backup kanalida admin bo'lishi shart (xabar yuborish uchun).
+    """
+    if not BACKUP_CHAT_ID:
+        log.info("BACKUP_CHAT_ID sozlanmagan — backup o'tkazib yuborildi.")
+        return
+    n_subs = len(all_subs())
+    stamp = now_utc().astimezone().strftime("%d.%m.%Y %H:%M")
+    await bot.send_document(
+        chat_id=BACKUP_CHAT_ID,
+        document=FSInputFile(DB_PATH),
+        caption=f"💾 Backup {stamp}\nObunachilar: {n_subs}",
+    )
+    log.info("Backup yuborildi (%s obunachi)", n_subs)
+
+
 # ---------------------------------------------------------------------------
 # Ishga tushirish
 # ---------------------------------------------------------------------------
@@ -1131,6 +1326,7 @@ async def main() -> None:
         )
     await on_startup()
     asyncio.create_task(checker_loop())
+    asyncio.create_task(cleanup_and_backup_loop())
     log.info("Bot ishga tushdi (tekshiruv har %s soniyada)", CHECK_INTERVAL_SEC)
     await dp.start_polling(bot)
 
