@@ -19,7 +19,7 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 | `/users` | admin | Obunachilar ro'yxati |
 | `/add <id> <kun>` | admin | Obuna qo'shish/uzaytirish |
 | `/addmin <id> <daqiqa>` | admin | Test rejimi (muddatni almashtiradi) |
-| `/import <id> <sana>` | admin | Eski kanal a'zosini qo'shish (sana: 31-12-2025 yoki 2025-12-31, nuqta bilan; TUGASH muddati 23:59 UTC) |
+| `/kick <id>` | admin | Kanaldan chiqarish |
 | `/link <id>` | admin | Invite linkni qayta yuborish |
 
 ## Mahalliy ishga tushirish
@@ -62,23 +62,3 @@ Loyihaning eski versioni bilan aralashtirmaslik uchun Railway'da **aloqida yangi
 ```powershell
 python test_logic.py
 ```
-
-## Saqlash (retention) va backup
-
-- **Cheklar** — har bir chek fanamiz `receipts` jadvalida, `rid` (16 xonasli UUID)
-  asosida. Adminlar bir vaqtning o'zida chek qabul qilishga urinishlari
-  mumkinligi uchun `claim_receipt` atomik UPDATE orqali hisoblanadi:
-  faqat birinchi chaqiruv `None` qaytaradi (qulf egalladi), ikkinchisi
-  mavjud yozuvni qaytaradi (kim/qachon hal qilgani ko'rsatadi).
-- **Duplikat chek skrinshotlari** — `receipts.photo_uid` ustuni (`file_unique_id`)
-  sifatida saqlanadi. Aynan shu fayl kelgan bo'lsa, `TAKRORLANISH!`
-  xabari to'g'ridan-to'g'ri chapiylanadi.
-- **6 soatda backup** — `run_backup()` `bot.db` faylini `BACKUP_CHAT_ID`
-  (boshqa kanal) ga yuboradi. `BACKUP_CHAT_ID` sozlanmagan bo'lsa, faqat
-  logda xabar beriladi.
-- **90 kunlik retention** — `run_cleanup()` `RETENTION_DAYS` (90) kun oldin
-  tugagan obunachilar `subs` va hal qilingan `receipts` satrlarini o'chiradi.
-  So'ngra `VACUUM` orqali hajm kamaytiriladi (`/data` Volume 50 MB chegarasini
-  saqlab qo'yish uchun zarur).
-- **O'zgartirish** — `.env.example` da `BACKUP_CHAT_ID`, `BACKUP_INTERVAL_HOURS`,
-  `RETENTION_DAYS`.
