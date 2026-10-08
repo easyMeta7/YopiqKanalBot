@@ -2,13 +2,16 @@
 
 Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 
-## Funktsiyalar
+> AI yordamchi ishlatayotgan bo'lsangiz: loyiha holati va oxirgi ishlar `AI_LOG.md` da, AI qoidasi `AGENTS.md` da.
 
-- To'lov (Variant B): chek skrinshoti → admin tasdiqlashi → bir martalik invite link
+## Funksiyalar
+
+- To'lov: chek skrinshoti, admin tasdiqlashi, bir martalik invite link (24 soat)
+- Bir xil chek rasmi qayta kelsa, adminga ⚠️ TAKRORLANISH ogohlantirishi
 - Muddat tugashidan 3 kun va 1 kun oldin eslatma
 - Muddat tugaganda kanaldan chiqarish + "Qayta obuna / Fikr bildirish" tugmalari
-- Admin buyruqlari: obunachilar ro'yxati (ID + muddat), ID bo'yicha chiqarish
-- Obunachilarda "💬 Admin bilan bog'lanish" tugmasi (shaxsiy chatga URL)
+- Admin: obunachilar ro'yxati, qo'shish/uzaytirish, test obuna, chiqarish, link, broadcast
+- Har 6 soatda baza nusxasi backup kanaliga yuboriladi
 
 ## Buyruqlar
 
@@ -16,11 +19,14 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 |---|---|---|
 | `/start` | hamma | Boshlash / tarif tanlash |
 | `/obuna` | hamma | Obuna holati |
-| `/users` | admin | Obunachilar ro'yxati |
-| `/add <id> <kun>` | admin | Obuna qo'shish/uzaytirish |
+| `/users` | admin | Faol obunachilar ro'yxati |
+| `/add <id> <kun>` | admin | Muddatni uzaytirish |
+| `/add <id> <sana>` | admin | Tugash sanasini aniq qo'yish (`31-12-2026`), eski a'zolar uchun |
 | `/addmin <id> <daqiqa>` | admin | Test rejimi (muddatni almashtiradi) |
-| `/import <id> <sana>` | admin | Eski kanal a'zosini qo'shish (sana: 31-12-2025 yoki 2025-12-31, nuqta bilan; TUGASH muddati 23:59 UTC) |
+| `/kick <id>` | admin | Kanaldan chiqarish |
 | `/link <id>` | admin | Invite linkni qayta yuborish |
+
+Admin klaviaturasida shular tugma sifatida ham bor, qo'shimcha: 📢 Broadcast (barcha faol obunachilarga xabar).
 
 ## Mahalliy ishga tushirish
 
@@ -32,53 +38,30 @@ Copy-Item .env.example .env   # to'ldiring
 python bot.py
 ```
 
-## Railway'ga deploy (yangi project)
+## Railway'ga deploy
 
-1. Bu repo'ni GitHub'ga push qiling
-2. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → bu repo'ni tanlang
+1. Repo'ni GitHub'ga push qiling
+2. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
 3. **Variables** bo'limida kiriting (`.env` dagidek):
-   - `BOT_TOKEN` — @BotFather tokeni
-   - `CHANNEL_ID` — `-100...` ko'rinishida
-   - `ADMIN_IDS` — sizning Telegram ID ingiz
-   - `CARD_VISA`, `CARD_HUMO`, `CARD_UZCARD` — 3 ta karta raqami
-   - `CARD_OWNER` — karta egasi
-   - `CHECK_INTERVAL_SEC` — `600`
-   - `DB_PATH` — `/data/bot.db`
-   - `ADMIN_CONTACT_USERNAME` — obunachilarga chiqadigan
-     "💬 Admin bilan bog'lanish" tugmasi (username, `@` sizsiz)
-4. ⚠️ **ENG MUHIM QADAM — Volume (obunachilar saqlanishi uchun):**
+   - `BOT_TOKEN`: @BotFather tokeni
+   - `CHANNEL_ID`: `-100...` ko'rinishida
+   - `ADMIN_IDS`: admin Telegram ID lari (vergul bilan)
+   - `CARD_VISA`, `CARD_HUMO`, `CARD_UZCARD`, `CARD_OWNER`
+   - `ADMIN_CONTACT_USERNAME`: "Admin bilan bog'lanish" tugmasi uchun (`@` siz)
+   - `CHECK_INTERVAL_SEC`: `600`
+   - `DB_PATH`: `/data/bot.db`
+   - `BACKUP_CHANNEL_ID`: backup yuboriladigan kanal ID (bot u yerda admin bo'lsin)
+4. ⚠️ **Volume** (obunachilar bazasi saqlanishi uchun, shart):
    - Settings → **Volumes** → *New Volume* → mount path: **`/data`**
-   - `DB_PATH=/data/bot.db` bilan **birgalikda** ishlaydi — ikkisi ham shart
-   - Aks holda har deploy'da `bot.db` (obunachilar bazasi) yo'qoladi
-   - Tekshirish: Logs'da `DB: /data/bot.db — obunachilar soni: N`
-     chiqishi kerak. `bot.db` da chiqsa (papka ichida) — Volume ulanmagan
-   - Railway'da Volume **Starter+ plan**da mavjud
-5. Bot kanalga **admin** qiling: ruxsatlar *Invite users via link* + *Ban users*
+   - `DB_PATH=/data/bot.db` bilan birgalikda ishlaydi
+   - Tekshirish: Logs'da `DB: /data/bot.db – obunachilar soni: N` chiqishi kerak.
+     `bot.db` chiqsa, Volume ulanmagan
+5. Botni kanalga **admin** qiling: *Invite users via link* + *Ban users*
 
-Loyihaning eski versioni bilan aralashtirmaslik uchun Railway'da **aloqida yangi project** yarating — "Deploy from GitHub repo" repositoriya tanlashda yangi repo bo'ladi.
-
-## Test
+## Testlar
 
 ```powershell
-python test_logic.py
+python test_fixes.py
+python test_race.py
+python test_cards.py
 ```
-
-## Saqlash (retention) va backup
-
-- **Cheklar** — har bir chek fanamiz `receipts` jadvalida, `rid` (16 xonasli UUID)
-  asosida. Adminlar bir vaqtning o'zida chek qabul qilishga urinishlari
-  mumkinligi uchun `claim_receipt` atomik UPDATE orqali hisoblanadi:
-  faqat birinchi chaqiruv `None` qaytaradi (qulf egalladi), ikkinchisi
-  mavjud yozuvni qaytaradi (kim/qachon hal qilgani ko'rsatadi).
-- **Duplikat chek skrinshotlari** — `receipts.photo_uid` ustuni (`file_unique_id`)
-  sifatida saqlanadi. Aynan shu fayl kelgan bo'lsa, `TAKRORLANISH!`
-  xabari to'g'ridan-to'g'ri chapiylanadi.
-- **6 soatda backup** — `run_backup()` `bot.db` faylini `BACKUP_CHAT_ID`
-  (boshqa kanal) ga yuboradi. `BACKUP_CHAT_ID` sozlanmagan bo'lsa, faqat
-  logda xabar beriladi.
-- **90 kunlik retention** — `run_cleanup()` `RETENTION_DAYS` (90) kun oldin
-  tugagan obunachilar `subs` va hal qilingan `receipts` satrlarini o'chiradi.
-  So'ngra `VACUUM` orqali hajm kamaytiriladi (`/data` Volume 50 MB chegarasini
-  saqlab qo'yish uchun zarur).
-- **O'zgartirish** — `.env.example` da `BACKUP_CHAT_ID`, `BACKUP_INTERVAL_HOURS`,
-  `RETENTION_DAYS`.
