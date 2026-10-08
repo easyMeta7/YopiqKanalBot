@@ -1,24 +1,34 @@
 """
 Yopiq kanal uchun obuna boshqaruv boti.
-Python + aiogram 3 + SQLite.
+Python + aiogram 3 + SQLite. Railway'ga deploy qilinadi.
+
+>>> AI YORDAMCHILAR UCHUN (Claude, ChatGPT, Gemini, Codex, Cursor, Freebuff...) <<<
+  1. Bu faylga tegishdan OLDIN AI_LOG.md ni to'liq o'qing (loyiha holati, qarorlar,
+     ochiq masalalar, oxirgi ishlar shu yerda).
+  2. Kodni o'zgartirsangiz, ish tugagach AI_LOG.md dagi "O'zgarishlar jurnali"
+     TEPASIGA yangi yozuv qo'shing. Foydalanuvchi eslatmasa ham. Bu majburiy.
+  3. Yangi buyruq/o'zgaruvchi/qaror bo'lsa AI_LOG.md "Joriy holat" ni ham yangilang.
+  4. Token, karta raqami va boshqa sirlarni logga yozmang.
 
 Asosiy funksiyalar:
-  - To'lov (Variant B): chek skrinshoti -> admin tasdiqlashi -> bir martalik invite link
+  - To'lov: chek skrinshoti -> admin tasdiqlashi -> bir martalik invite link
+  - Takroriy chek ogohlantirishi (bir xil rasm qayta kelsa adminga ⚠️)
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
-  - Muddat tugaganda kanaldan chiqarish + "Qayta obuna / Fikr bildirish" tugmalari
-  - Admin buyruqlari: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
-  - /add <id> <kun>      - obuna qo'shish/uzaytirish
+  - Muddat tugaganda kanaldan chiqarish (xato bo'lsa keyingi aylanishda qayta uriniladi)
+  - Admin: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
+  - /add <id> <kun>   - muddatni uzaytiradi
+  - /add <id> <sana>  - tugash sanasini aniq qo'yadi (31-12-2026), eski a'zolar uchun
   - /addmin <id> <daqiqa> - test rejimi (eski muddatni ALMASHTIRADI)
-  - /kick <id>           - foydalanuvchini kanaldan chiqarish
-  - /link <id>           - invite linkni qayta yuborish
-  - 📢 Broadcast         - Barcha faol obunachilarga xabar yuborish
-  - 📂 Auto-Backup       - Har 6 soatda bazani backup kanalga yuborish
+  - /kick <id>, /link <id>
+  - 📢 Broadcast  - barcha faol obunachilarga xabar
+  - 📂 Auto-Backup - har 6 soatda baza nusxasi BACKUP_CHANNEL_ID kanaliga
 """
 
 import asyncio
 import logging
 import os
 import sqlite3
+import tempfile
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -26,6 +36,7 @@ from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -34,6 +45,7 @@ from aiogram.types import (
     BotCommand,
     CallbackQuery,
     InlineKeyboardButton,
+    FSInputFile,
     InlineKeyboardMarkup,
     KeyboardButton,
     Message,
@@ -124,28 +136,60 @@ def init_db() -> None:
             )
             """
         )
-        try:
-            conn.execute("ALTER TABLE receipts ADD COLUMN admin_name TEXT")
-        except sqlite3.OperationalError:
-            pass
+        for col in ("admin_name TEXT", "photo_uid TEXT"):
+            try:
+                conn.execute(f"ALTER TABLE receipts ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_receipts_photo ON receipts(photo_uid)")
         conn.commit()
 
+def register_receipt(rid: str, photo_uid: str) -> None:
+    """Chekni 'pending' sifatida ro'yxatga oladi."""
+    with db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO receipts (rid, status, photo_uid) VALUES (?, 'pending', ?)",
+            (rid, photo_uid),
+        )
+
 def claim_receipt(rid: str, status: str, admin_id: int, admin_name: str) -> sqlite3.Row | None:
+    """Chekni atomik egallaydi: faqat birinchi bosgan admin o'tadi (None qaytadi).
+    Keyingilarga mavjud yozuv qaytadi."""
     now = now_tashkent().replace(microsecond=0).isoformat()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        try:
+        cur = conn.execute(
+            "UPDATE receipts SET status=?, admin_id=?, admin_name=?, decided_at=? "
+            "WHERE rid=? AND status='pending'",
+            (status, admin_id, admin_name, now, rid),
+        )
+        conn.commit()
+        if cur.rowcount == 1:
+            return None
+        row = conn.execute("SELECT * FROM receipts WHERE rid = ?", (rid,)).fetchone()
+        if row is None:  # ro'yxatga olinmagan chek – to'g'ridan-to'g'ri egallaymiz
             conn.execute(
                 "INSERT INTO receipts (rid, status, admin_id, admin_name, decided_at) VALUES (?,?,?,?,?)",
                 (rid, status, admin_id, admin_name, now),
             )
             conn.commit()
             return None
-        except sqlite3.IntegrityError:
-            return conn.execute("SELECT * FROM receipts WHERE rid = ?", (rid,)).fetchone()
+        return row
     finally:
         conn.close()
+
+def find_duplicate_receipt(photo_uid: str, exclude_rid: str) -> sqlite3.Row | None:
+    """Xuddi shu rasm (file_unique_id) avval kelganmi? Tahrirlanmagan bir xil
+    rasm har doim bir xil file_unique_id beradi."""
+    if not photo_uid:
+        return None
+    with db() as conn:
+        return conn.execute(
+            "SELECT * FROM receipts WHERE photo_uid = ? AND rid != ? "
+            "ORDER BY (status='approved') DESC, decided_at DESC LIMIT 1",
+            (photo_uid, exclude_rid),
+        ).fetchone()
 
 def get_sub(user_id: int) -> sqlite3.Row | None:
     with db() as conn:
@@ -185,15 +229,71 @@ def all_subs() -> list[sqlite3.Row]:
 def now_tashkent() -> datetime:
     return datetime.now(timezone(timedelta(hours=5)))
 
+def parse_end_date(text: str) -> datetime | None:
+    """Tugash sanasini o'qiydi: 31-12-2026, 31.12.2026, 31/12/2026 yoki 2026-12-31.
+    Shu kun 23:59 (Toshkent) qaytariladi. Noto'g'ri bo'lsa None."""
+    t = (text or "").strip()
+    for sep in ("-", ".", "/"):
+        if sep in t:
+            parts = t.split(sep)
+            break
+    else:
+        return None
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    try:
+        if len(parts[0]) == 4:
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+        elif len(parts[2]) == 4:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+        else:
+            return None
+        return datetime(y, m, d, 23, 59, tzinfo=timezone(timedelta(hours=5)))
+    except ValueError:
+        return None
+
+async def add_by_days_or_date(uid: int, arg: str, msg: Message) -> bool:
+    """arg – kun soni (uzaytiradi) yoki tugash sanasi (aniq muddat qo'yadi).
+    Muvaffaqiyatli bo'lsa True, noto'g'ri kiritilsa False (xabar yuboriladi)."""
+    arg = (arg or "").strip()
+    start = now_tashkent().replace(microsecond=0)
+    if arg.isdigit():
+        days = int(arg)
+        if days <= 0:
+            await msg.answer("Kun soni 0 dan katta bo'lishi kerak.")
+            return False
+        await grant_and_send(uid, start, start + timedelta(days=days), replace=False, msg=msg)
+        return True
+    end = parse_end_date(arg)
+    if end is None:
+        await msg.answer("❌ Tushunmadim. Kun sonini (masalan: 30) yoki tugash sanasini (masalan: 31-12-2026) yozing.")
+        return False
+    if end <= start:
+        await msg.answer(f"❌ Sana o'tib ketgan ({fmt_dt(end.isoformat())}). Kelajakdagi sanani yozing.")
+        return False
+    await grant_and_send(uid, start, end, replace=True, msg=msg)
+    return True
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
-async def in_channel(user_id: int) -> bool:
+async def in_channel(user_id: int) -> bool | None:
+    """True/False – aniq javob. None – tekshirib bo'lmadi (tarmoq/API xatosi)."""
     try:
         m = await bot.get_chat_member(CHANNEL_ID, user_id)
-        return m.status in ("member", "administrator", "creator")
-    except Exception:
-        return False
+    except TelegramBadRequest as e:
+        if "user not found" in str(e).lower() or "participant" in str(e).lower():
+            return False
+        log.warning("in_channel(%s) BadRequest: %s", user_id, e)
+        return None
+    except Exception as e:
+        log.warning("in_channel(%s) xato: %s", user_id, e)
+        return None
+    if m.status in ("member", "administrator", "creator"):
+        return True
+    if m.status == "restricted":
+        return bool(getattr(m, "is_member", False))
+    return False
 
 async def make_invite_link(user_id: int) -> str:
     link = await bot.create_chat_invite_link(
@@ -333,7 +433,7 @@ async def kb_back(msg: Message, state: FSMContext) -> None:
 async def kb_users(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
-    await msg.answer(subs_list_text(), disable_web_page_preview=True)
+    await send_subs_list(msg)
 
 @router.message(F.text == "🛠 Buyruqlar")
 async def kb_help(msg: Message) -> None:
@@ -341,8 +441,8 @@ async def kb_help(msg: Message) -> None:
         return
     await msg.answer(
         "🛠 <b>Tugmalar:</b>\n\n"
-        "➕ <b>Qo'shish</b> – obunachilarga obuna qo'shish yoki uzaytirish.\n"
-        "Bosganda: ID so'raydi → necha kun so'raydi → tayyor.\n\n"
+        "➕ <b>Qo'shish</b> – obuna qo'shish yoki uzaytirish; eski a'zolarni kiritish.\n"
+        "Bosganda: ID so'raydi → kun soni (uzaytiradi) yoki tugash sanasi, masalan 31-12-2026 (aniq muddat qo'yadi).\n\n"
         "🧪 <b>Test obuna</b> – test uchun daqiqalik obuna.\n"
         "Bosganda: ID so'raydi → necha daqiqa so'raydi → tayyor.\n"
         "(eski muddatni almashtiradi, uzaytirmaydi)\n\n"
@@ -384,13 +484,27 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
     await state.clear()
     price = f"{PLANS[pid]['price']:,}".replace(",", " ")
     rid = uuid.uuid4().hex[:16]
+    photo_uid = msg.photo[-1].file_unique_id or ""
+    register_receipt(rid, photo_uid)
+    dup = find_duplicate_receipt(photo_uid, exclude_rid=rid)
+    dup_info = ""
+    if dup is not None:
+        if dup["status"] == "pending":
+            dup_info = "⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham yuborilgan, hali hal qilinmagan.\n\n"
+        else:
+            when = f", {fmt_dt(dup['decided_at'])}" if dup["decided_at"] else ""
+            dup_info = (
+                f"⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham kelgan – "
+                f"{_decision_word(dup['status']).lower()} ({dup['admin_name'] or 'admin'}{when}).\n\n"
+            )
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_photo(
                 chat_id=admin_id,
                 photo=msg.photo[-1].file_id,
                 caption=(
-                    f"🧾 Yangi chek!\n"
+                    dup_info
+                    + f"🧾 Yangi chek!\n"
                     f"Foydalanuvchi: {msg.from_user.id} (@{msg.from_user.username or '-'})\n"
                     f"Tarif: {PLANS[pid]['name']} – {price} so'm"
                 ),
@@ -556,13 +670,10 @@ async def cmd_add(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
     parts = (msg.text or "").split()
-    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
-        await msg.answer("Foydalanish: /add <user_id> <kun>")
+    if len(parts) != 3 or not parts[1].isdigit():
+        await msg.answer("Foydalanish:\n/add &lt;user_id&gt; &lt;kun&gt;  – muddatni uzaytiradi\n/add &lt;user_id&gt; &lt;sana&gt;  – tugash sanasini aniq qo'yadi (31-12-2026)")
         return
-    uid, days = int(parts[1]), int(parts[2])
-    start = now_tashkent().replace(microsecond=0)
-    end = start + timedelta(days=days)
-    await grant_and_send(uid, start, end, replace=False, msg=msg)
+    await add_by_days_or_date(int(parts[1]), parts[2], msg)
 
 @router.message(Command("addmin"))
 async def cmd_addmin(msg: Message) -> None:
@@ -611,7 +722,7 @@ async def cmd_link(msg: Message) -> None:
 async def cmd_users(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
-    await msg.answer(subs_list_text(), disable_web_page_preview=True)
+    await send_subs_list(msg)
 
 # ---------------------------------------------------------------------------
 # Klaviatura dialoglari (2-daraja tugmalar)
@@ -638,21 +749,19 @@ async def kb_add_uid(msg: Message, state: FSMContext) -> None:
         return
     await state.update_data(user_id=int(text))
     await state.set_state(AddDlg.days)
-    await msg.answer("📅 Necha kun qo'shilsin? (masalan: 30)")
+    await msg.answer(
+        "📅 Necha kun qo'shilsin yoki obuna qachon tugasin?\n\n"
+        "• Kun soni: <code>30</code> – hozirgi muddatga qo'shadi\n"
+        "• Sana: <code>31-12-2026</code> – tugash sanasini aniq qo'yadi (eski a'zolar uchun)"
+    )
 
 @router.message(AddDlg.days)
 async def kb_add_days(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit() or int(text) <= 0:
-        await msg.answer("Kun sonini kiriting. Masalan: 30")
-        return
     data = await state.get_data()
     uid = data["user_id"]
-    days = int(text)
-    await state.clear()
-    start = now_tashkent().replace(microsecond=0)
-    end = start + timedelta(days=days)
-    await grant_and_send(uid, start, end, replace=False, msg=msg)
+    ok = await add_by_days_or_date(uid, msg.text or "", msg)
+    if ok:
+        await state.clear()
 
 @router.message(F.text == "🧪 Test obuna")
 async def kb_test(msg: Message, state: FSMContext) -> None:
@@ -761,17 +870,33 @@ async def kick_user(uid: int, msg: Message) -> None:
         await msg.answer(f"Xato: {e}")
 
 def subs_list_text() -> str:
-    rows = all_subs()
-    if not rows:
-        return "Obunachilar yo'q."
+    """Faqat FAOL obunachilar (muddati tugaganlar ko'rsatilmaydi)."""
     now = now_tashkent()
-    lines = [f"👥 Obunachilar ({len(rows)}):", ""]
+    rows = [r for r in all_subs() if datetime.fromisoformat(r["end_at"]) > now]
+    if not rows:
+        return "Faol obunachilar yo'q."
+    lines = [f"👥 Faol obunachilar ({len(rows)}):", ""]
     for r in rows:
-        end = datetime.fromisoformat(r["end_at"])
-        status = "✅" if end > now else "❌"
         uname = f"@{r['username']}" if r['username'] else "-"
-        lines.append(f"{status} ID: <code>{r['user_id']}</code> {uname} – muddat: {fmt_dt(r['end_at'])}")
+        lines.append(f"✅ ID: <code>{r['user_id']}</code> {uname} – muddat: {fmt_dt(r['end_at'])}")
     return "\n".join(lines)
+
+def split_text(text: str, limit: int = 3900) -> list[str]:
+    """Telegram xabar chegarasi (4096) dan oshmasligi uchun qatorlar bo'yicha bo'ladi."""
+    chunks, cur = [], ""
+    for line in text.split("\n"):
+        if cur and len(cur) + len(line) + 1 > limit:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+async def send_subs_list(msg: Message) -> None:
+    for chunk in split_text(subs_list_text()):
+        await msg.answer(chunk, disable_web_page_preview=True)
 
 # ---------------------------------------------------------------------------
 # Muddatni tekshirish tsikli
@@ -804,11 +929,18 @@ async def check_subscriptions() -> None:
             continue
         if r["expired_msg"]:
             continue
-        try:
-            if await in_channel(uid):
+        # Avval kanaldan chiqaramiz. Tekshirib bo'lmasa yoki chiqarish xato bersa,
+        # belgi qo'ymaymiz – keyingi aylanishda qayta uriniladi.
+        status = await in_channel(uid)
+        if status is None:
+            log.warning("Muddati tugagan %s: a'zolikni tekshirib bo'lmadi, keyin qayta uriniladi", uid)
+            continue
+        if status:
+            try:
                 await remove_from_channel(uid)
-        except Exception as e:
-            log.error("Chiqarishda xato %s: %s", uid, e)
+            except Exception as e:
+                log.error("Chiqarishda xato %s: %s (keyin qayta uriniladi)", uid, e)
+                continue
         try:
             await bot.send_message(uid, "🔔 Obuna muddatingiz tugadi.\n\nQaytadan obuna bo'lasizmi yoki kanal haqida qandaydir fikringiz bormi?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Qayta obuna bo'lish", callback_data="resub")], [InlineKeyboardButton(text="💭 Fikr bildirish", callback_data="feedback")]]))
         except Exception as e:
@@ -823,15 +955,36 @@ async def checker_loop() -> None:
             log.error("Tekshiruvda xato: %s", e)
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
+def _make_backup_copy() -> str:
+    """Ishlayotgan bazadan xavfsiz nusxa (sqlite backup API) – vaqtinchalik faylga."""
+    tmp = tempfile.NamedTemporaryFile(prefix="bot_backup_", suffix=".db", delete=False)
+    tmp.close()
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(tmp.name)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    return tmp.name
+
 async def backup_loop() -> None:
     while True:
         try:
             if BACKUP_CHANNEL_ID:
-                await bot.send_document(
-                    chat_id=BACKUP_CHANNEL_ID,
-                    document=DB_PATH,
-                    caption=f"📂 Avtomatik Backup\nSana: {now_tashkent().strftime('%d.%m.%Y %H:%M')}"
-                )
+                path = await asyncio.to_thread(_make_backup_copy)
+                try:
+                    await bot.send_document(
+                        chat_id=BACKUP_CHANNEL_ID,
+                        document=FSInputFile(path, filename="bot.db"),
+                        caption=f"📂 Avtomatik Backup\nSana: {now_tashkent().strftime('%d.%m.%Y %H:%M')}",
+                    )
+                    log.info("Backup yuborildi")
+                finally:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
             else:
                 log.warning("BACKUP_CHANNEL_ID topilmadi, backup yuborilmadi.")
         except Exception as e:

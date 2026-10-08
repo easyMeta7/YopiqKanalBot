@@ -11,3 +11,6 @@ venv/
 *.db
 *.db-journal
 *.sqlite3
+
+# AI vositalarining ichki papkalari
+.freebuff/
