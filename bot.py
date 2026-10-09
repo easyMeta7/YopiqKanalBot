@@ -15,6 +15,7 @@ Asosiy funksiyalar:
   - Takroriy chek ogohlantirishi (bir xil rasm qayta kelsa adminga ⚠️)
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
   - Muddat tugaganda kanaldan chiqarish (xato bo'lsa keyingi aylanishda qayta uriniladi)
+  - Chiqarib bo'lmasa yoki backup xato bersa, adminlarga ogohlantirish (bir muammo uchun bir marta)
   - Admin: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
   - /add <id> <kun>   - muddatni uzaytiradi
   - /add <id> <sana>  - tugash sanasini aniq qo'yadi (31-12-2026), eski a'zolar uchun
@@ -25,6 +26,7 @@ Asosiy funksiyalar:
 """
 
 import asyncio
+import html
 import logging
 import os
 import sqlite3
@@ -917,6 +919,55 @@ async def _set_flag(field: str, uid: int) -> None:
         conn.execute(f"UPDATE subs SET {field}=1 WHERE user_id=?", (uid,))
         conn.commit()
 
+# ---------------------------------------------------------------------------
+# Adminlarga ogohlantirish (bir xil muammo uchun bir marta)
+# ---------------------------------------------------------------------------
+
+_kick_alerted: set[int] = set()        # chiqarib bo'lmagan va adminga aytilgan foydalanuvchilar
+_kick_fail_count: dict[int, int] = {}  # a'zolikni tekshirib bo'lmagan ketma-ket urinishlar
+_backup_alerted = False                # backup xatosi haqida adminga aytilganmi
+KICK_UNKNOWN_ALERT_AFTER = 3           # tekshirib bo'lmasa, shuncha urinishdan keyin ogohlantiramiz
+
+async def notify_admins(text: str) -> None:
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception as e:
+            log.warning("Adminga (%s) xabar yuborilmadi: %s", admin_id, e)
+
+def _who(r) -> str:
+    uname = f" @{r['username']}" if r["username"] else ""
+    return f"<code>{r['user_id']}</code>{uname}"
+
+async def alert_kick_problem(r, reason: str) -> None:
+    uid = r["user_id"]
+    if uid in _kick_alerted:
+        return
+    _kick_alerted.add(uid)
+    low = reason.lower()
+    hint = (
+        "Bu odam kanal egasi yoki admini bo'lishi mumkin: Telegram botga ularni chiqarishga ruxsat bermaydi."
+        if ("owner" in low or "administrator" in low or "can't remove" in low or "cannot remove" in low)
+        else "Bot kanalda admin ekanini va \"Ban users\" huquqi borligini tekshiring."
+    )
+    await notify_admins(
+        "⚠️ <b>Muddati tugagan foydalanuvchini kanaldan chiqarib bo'lmadi</b>\n"
+        "\n"
+        f"Foydalanuvchi: {_who(r)}\n"
+        f"Tugagan: {fmt_dt(r['end_at'])}\n"
+        f"Sabab: {html.escape(reason[:200])}\n"
+        "\n"
+        f"{hint}\n"
+        "Bot har tekshiruvda qayta urinadi. Qo'lda chiqarish: ❌ Chiqarish tugmasi."
+    )
+
+async def resolve_kick_problem(r) -> None:
+    uid = r["user_id"]
+    _kick_fail_count.pop(uid, None)
+    if uid in _kick_alerted:
+        _kick_alerted.discard(uid)
+        await notify_admins(f"✅ {_who(r)} kanaldan chiqarildi (avvalgi muammo hal bo'ldi).")
+
 async def check_subscriptions() -> None:
     now = now_tashkent()
     for r in all_subs():
@@ -957,14 +1008,20 @@ async def check_subscriptions() -> None:
         # belgi qo'ymaymiz – keyingi aylanishda qayta uriniladi.
         status = await in_channel(uid)
         if status is None:
-            log.warning("Muddati tugagan %s: a'zolikni tekshirib bo'lmadi, keyin qayta uriniladi", uid)
+            n = _kick_fail_count.get(uid, 0) + 1
+            _kick_fail_count[uid] = n
+            log.warning("Muddati tugagan %s: a'zolikni tekshirib bo'lmadi (%s-urinish), keyin qayta uriniladi", uid, n)
+            if n >= KICK_UNKNOWN_ALERT_AFTER:
+                await alert_kick_problem(r, "Telegram a'zolikni tekshirishga javob bermayapti")
             continue
         if status:
             try:
                 await remove_from_channel(uid)
             except Exception as e:
                 log.error("Chiqarishda xato %s: %s (keyin qayta uriniladi)", uid, e)
+                await alert_kick_problem(r, str(e))
                 continue
+        await resolve_kick_problem(r)
         try:
             await bot.send_message(uid, "🔔 Obuna muddatingiz tugadi.\n\nQaytadan obuna bo'lasizmi yoki kanal haqida qandaydir fikringiz bormi?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Qayta obuna bo'lish", callback_data="resub")], [InlineKeyboardButton(text="💭 Fikr bildirish", callback_data="feedback")]]))
         except Exception as e:
@@ -992,27 +1049,46 @@ def _make_backup_copy() -> str:
         src.close()
     return tmp.name
 
+async def run_backup_once() -> None:
+    """Bitta backup. Xato bo'lsa adminga bir marta xabar beradi, tiklansa yana bir marta."""
+    global _backup_alerted
+    if not BACKUP_CHANNEL_ID:
+        log.warning("BACKUP_CHANNEL_ID topilmadi, backup yuborilmadi.")
+        return
+    try:
+        path = await asyncio.to_thread(_make_backup_copy)
+        try:
+            await bot.send_document(
+                chat_id=BACKUP_CHANNEL_ID,
+                document=FSInputFile(path, filename="bot.db"),
+                caption=f"📂 Avtomatik Backup\nSana: {now_tashkent().strftime('%d.%m.%Y %H:%M')}",
+            )
+            log.info("Backup yuborildi")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    except Exception as e:
+        log.error("Backup yuborishda xato: %s", e)
+        if not _backup_alerted:
+            _backup_alerted = True
+            await notify_admins(
+                "⚠️ <b>Backup yuborilmadi</b>\n"
+                "\n"
+                f"Sabab: {html.escape(str(e)[:200])}\n"
+                "\n"
+                "Bot backup kanalida admin ekanini va BACKUP_CHANNEL_ID to'g'riligini tekshiring. "
+                "Bot 6 soatdan keyin qayta urinadi."
+            )
+        return
+    if _backup_alerted:
+        _backup_alerted = False
+        await notify_admins("✅ Backup yana ishlayapti.")
+
 async def backup_loop() -> None:
     while True:
-        try:
-            if BACKUP_CHANNEL_ID:
-                path = await asyncio.to_thread(_make_backup_copy)
-                try:
-                    await bot.send_document(
-                        chat_id=BACKUP_CHANNEL_ID,
-                        document=FSInputFile(path, filename="bot.db"),
-                        caption=f"📂 Avtomatik Backup\nSana: {now_tashkent().strftime('%d.%m.%Y %H:%M')}",
-                    )
-                    log.info("Backup yuborildi")
-                finally:
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-            else:
-                log.warning("BACKUP_CHANNEL_ID topilmadi, backup yuborilmadi.")
-        except Exception as e:
-            log.error("Backup yuborishda xato: %s", e)
+        await run_backup_once()
         await asyncio.sleep(6 * 3600)
 
 # ---------------------------------------------------------------------------

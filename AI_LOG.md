@@ -38,6 +38,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - Takroriy chek: `file_unique_id` bo'yicha solishtiriladi, adminga ⚠️ chiqadi. Avtomatik rad etilmaydi.
 - Muddat tugaganda: `in_channel()` True/False/None qaytaradi. None yoki chiqarish xatosida `expired_msg` belgisi
   qo'yilmaydi va keyingi aylanishda qayta uriniladi.
+- Adminga ogohlantirish: kanaldan chiqarib bo'lmasa va backup xato bersa (bir muammo uchun bir marta, hal bo'lsa xabar).
 - Backup: har 6 soatda sqlite backup API bilan nusxa olinib `BACKUP_CHANNEL_ID` kanaliga fayl sifatida yuboriladi
   (bot ishga tushganda ham birinchi marta yuboradi).
 - Railway: loyiha `eloquent-curiosity`, servis `YopiqKanalBot`, Volume `musofx-volume` (`/data`, 500 MB).
@@ -77,6 +78,22 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 ```
 
 ## O'zgarishlar jurnali (yangisi tepada)
+
+### 2026-10-09, Claude (claude.ai chat)
+- Adminlarga ogohlantirish qo'shildi (`notify_admins`, `alert_kick_problem`, `resolve_kick_problem`):
+  - Muddati tugagan foydalanuvchini kanaldan chiqarib bo'lmasa, barcha `ADMIN_IDS` ga sabab va maslahat bilan xabar
+    ketadi (kanal egasi/admini bo'lsa, shu haqida ham yoziladi). Bir foydalanuvchi uchun bir marta; bot qayta urinadi.
+  - A'zolikni tekshirib bo'lmasa (tarmoq/API), 3 ketma-ket urinishdan keyin ogohlantiradi (`KICK_UNKNOWN_ALERT_AFTER`).
+  - Muammo hal bo'lsa "✅ chiqarildi" xabari boradi.
+  - Backup xatosi: adminga bir marta xabar, tiklansa yana bir marta ("✅ Backup yana ishlayapti").
+    `backup_loop` ichidagi ish `run_backup_once()` ga ajratildi.
+- Nega: foydalanuvchi talabi (chiqarish xato bersa admin bilishi kerak). Avval faqat logga yozilardi.
+- Ogohlantirish holati xotirada (`_kick_alerted`, `_backup_alerted`): bot qayta ishga tushsa, muammo davom etayotgan
+  bo'lsa, bir marta yana xabar beradi (normal).
+- Fayllar: bot.py, test_fixes.py (8-bo'lim; 3-bo'lim faqat 900 ID xabarlarini sanaydi)
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi. Hali `main` ga push qilinmagan.
+- Keyingi rejalar (foydalanuvchi hozircha KERAK EMAS dedi): eski obunachilarni ommaviy kiritish (ro'yxat yoki
+  "Men eski a'zoman" tugmasi) va Railway pullik rejasi. Boshqa g'oyalar: statistika, kunlik xulosa, /find.
 
 ### 2026-10-08, Claude (claude.ai chat)
 - Admin yordam matni ("🛠 Buyruqlar") qayta yozildi: har tugma alohida blok, sarlavha qalin, misollar `<code>` ichida.

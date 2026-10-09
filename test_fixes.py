@@ -54,7 +54,9 @@ async def fake_in(uid): return calls["status"]
 async def fake_remove(uid):
     if calls["remove_fail"]: raise RuntimeError("boom")
     calls["removed"].append(uid)
-async def fake_send(uid, *a, **k): calls["msgs"].append(uid)
+async def fake_send(uid, *a, **k):
+    if uid == 900:  # adminlarga ketgan ogohlantirishlar bu yerda hisoblanmaydi
+        calls["msgs"].append(uid)
 bot.in_channel = fake_in
 bot.remove_from_channel = fake_remove
 bot.bot.send_message = fake_send
@@ -172,4 +174,58 @@ for t in texts:
 asyncio.run(bot.check_subscriptions())   # qayta yuborilmasin
 assert len([1 for u, t in sent7 if u == 950]) == 2
 print("7. Yordam matni va eslatmalar OK")
-print("\nHAMMA TEST O'TDI ✅ (7)")
+
+# 8. Adminga ogohlantirish: chiqarib bo'lmasa va backup xato bersa
+msgs8 = []
+async def fake_send8(uid, text, **k): msgs8.append((uid, text))
+bot.bot.send_message = fake_send8
+state8 = {"in": True, "fail": "Bad Request: can't remove chat owner"}
+async def fake_in8(uid): return state8["in"]
+async def fake_remove8(uid):
+    if state8["fail"]: raise RuntimeError(state8["fail"])
+bot.in_channel = fake_in8
+bot.remove_from_channel = fake_remove8
+now8 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(960, "ownerx", now8 - timedelta(days=5), now8 - timedelta(days=1), replace=True)
+admins = list(bot.ADMIN_IDS)
+
+asyncio.run(bot.check_subscriptions())
+alerts = [(u, t) for u, t in msgs8 if "chiqarib bo'lmadi" in t]
+assert sorted(u for u, _ in alerts) == sorted(admins), alerts
+assert "960" in alerts[0][1] and "@ownerx" in alerts[0][1] and "kanal egasi" in alerts[0][1]
+assert bot.get_sub(960)["expired_msg"] == 0
+asyncio.run(bot.check_subscriptions())   # ikkinchi urinish: qayta ogohlantirmasin
+assert len([1 for u, t in msgs8 if "chiqarib bo'lmadi" in t]) == len(admins)
+
+state8["fail"] = None                    # muammo hal bo'ldi
+asyncio.run(bot.check_subscriptions())
+assert len([1 for u, t in msgs8 if "avvalgi muammo hal bo'ldi" in t]) == len(admins)
+assert bot.get_sub(960)["expired_msg"] == 1
+assert any(u == 960 and "tugadi" in t for u, t in msgs8)
+
+# tekshirib bo'lmasa: 3-urinishdan keyin ogohlantiradi
+async def fake_in_none(uid): return None
+bot.in_channel = fake_in_none
+msgs8.clear()
+bot.upsert_sub(961, "net", now8 - timedelta(days=5), now8 - timedelta(days=1), replace=True)
+for _ in range(2):
+    asyncio.run(bot.check_subscriptions())
+assert not [1 for u, t in msgs8 if "chiqarib bo'lmadi" in t], "2 urinishda hali ogohlantirmasin"
+asyncio.run(bot.check_subscriptions())
+assert len([1 for u, t in msgs8 if "chiqarib bo'lmadi" in t]) == len(admins)
+
+# Backup xatosi: bir marta xabar, tiklansa yana bir marta
+msgs8.clear()
+bot.BACKUP_CHANNEL_ID = -100777
+async def doc_fail(chat_id, document, caption=None): raise RuntimeError("chat not found <b>")
+bot.bot.send_document = doc_fail
+asyncio.run(bot.run_backup_once()); asyncio.run(bot.run_backup_once())
+b = [(u, t) for u, t in msgs8 if "Backup yuborilmadi" in t]
+assert len(b) == len(admins) and "&lt;b&gt;" in b[0][1]   # HTML escape qilingan
+async def doc_ok(chat_id, document, caption=None): return None
+bot.bot.send_document = doc_ok
+asyncio.run(bot.run_backup_once())
+assert len([1 for u, t in msgs8 if "Backup yana ishlayapti" in t]) == len(admins)
+print("8. Adminga ogohlantirishlar OK")
+print("\nHAMMA TEST O'TDI ✅ (8)")
+
