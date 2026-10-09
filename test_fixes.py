@@ -140,3 +140,36 @@ parts = bot.split_text(long_text)
 assert len(parts) > 1 and all(len(p) <= 4096 for p in parts) and "\n".join(parts) == long_text
 print("6. Faol obunachilar ro'yxati OK")
 print("\nHAMMA TEST O'TDI ✅ (6)")
+
+# 7. Yordam matni va eslatma xabarlari
+import re
+helps = []
+class AdminMsg:
+    from_user = SimpleNamespace(id=1)
+    async def answer(self, t, **k): helps.append(t)
+asyncio.run(bot.kb_help(AdminMsg()))
+h = helps[0]
+assert "Matn buyruqlari" not in h
+for name in ("Qo'shish", "Test obuna", "Chiqarish", "Link", "Broadcast", "Orqaga"):
+    assert f"<b>{name}</b>" in h, name
+assert h.count("<b>") == h.count("</b>") and h.count("<code>") == h.count("</code>")
+assert len(h) < 4096 and "\n\n" in h
+
+# eslatmalar: 2 daqiqa qolgan obuna -> ikkala eslatma ham, chiroyli formatda
+sent7 = []
+async def fake_send7(uid, text, **k): sent7.append((uid, text))
+bot.bot.send_message = fake_send7
+async def fake_in7(uid): return True
+bot.in_channel = fake_in7
+now7 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(950, "rem", now7, now7 + timedelta(minutes=2), replace=True)
+asyncio.run(bot.check_subscriptions())
+texts = [t for u, t in sent7 if u == 950]
+assert len(texts) == 2, texts
+assert "3 kundan kam" in texts[0] and "1 kundan kam" in texts[1]
+for t in texts:
+    assert "Tugash vaqti: <b>" in t and "/start" in t and "\n\n" in t
+asyncio.run(bot.check_subscriptions())   # qayta yuborilmasin
+assert len([1 for u, t in sent7 if u == 950]) == 2
+print("7. Yordam matni va eslatmalar OK")
+print("\nHAMMA TEST O'TDI ✅ (7)")

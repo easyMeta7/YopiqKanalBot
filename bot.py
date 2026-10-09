@@ -440,20 +440,30 @@ async def kb_help(msg: Message) -> None:
     if not is_admin(msg.from_user.id):
         return
     await msg.answer(
-        "🛠 <b>Tugmalar:</b>\n\n"
-        "➕ <b>Qo'shish</b> – obuna qo'shish yoki uzaytirish; eski a'zolarni kiritish.\n"
-        "Bosganda: ID so'raydi → kun soni (uzaytiradi) yoki tugash sanasi, masalan 31-12-2026 (aniq muddat qo'yadi).\n\n"
-        "🧪 <b>Test obuna</b> – test uchun daqiqalik obuna.\n"
-        "Bosganda: ID so'raydi → necha daqiqa so'raydi → tayyor.\n"
-        "(eski muddatni almashtiradi, uzaytirmaydi)\n\n"
-        "❌ <b>Chiqarish</b> – foydalanuvchini kanaldan chiqarish.\n"
-        "Bosganda: ID so'raydi → chiqaradi.\n\n"
-        "🔗 <b>Link</b> – invite linkni qayta yuborish.\n"
-        "Bosganda: ID so'raydi → link yuboradi.\n\n"
-        "📢 <b>Broadcast</b> – Barcha faol obunachilarga xabar yuborish.\n"
-        "🔙 <b>Orqaga</b> – asosiy menyuga qaytish.\n"
-        "Dialog paytida bosilsa, dialog bekor bo'ladi.\n\n"
-        "Matn buyruqlari ham ishlaydi: /users, /add, /addmin, /kick, /link, /obuna",
+        "🛠 <b>Admin tugmalari</b>\n"
+        "\n"
+        "➕ <b>Qo'shish</b>\n"
+        "Obuna qo'shadi yoki uzaytiradi. Eski a'zolarni ham shu orqali kiritasiz.\n"
+        "ID yuborasiz, keyin quyidagilardan birini yozasiz:\n"
+        "• kun soni, masalan <code>30</code> – hozirgi muddatga qo'shadi\n"
+        "• tugash sanasi, masalan <code>31-12-2026</code> – muddatni aynan shu kunga qo'yadi\n"
+        "\n"
+        "🧪 <b>Test obuna</b>\n"
+        "Bot ishlashini sinash uchun juda qisqa obuna beradi.\n"
+        "ID yuborasiz, keyin daqiqa sonini yozasiz, masalan <code>2</code>.\n"
+        "Eski muddat almashtiriladi, uzaytirilmaydi.\n"
+        "\n"
+        "❌ <b>Chiqarish</b>\n"
+        "Foydalanuvchini kanaldan chiqaradi va obunasini yopadi. Faqat ID yuborasiz.\n"
+        "\n"
+        "🔗 <b>Link</b>\n"
+        "Kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
+        "\n"
+        "📢 <b>Broadcast</b>\n"
+        "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani yoziladi.\n"
+        "\n"
+        "🔙 <b>Orqaga</b>\n"
+        "Asosiy menyuga qaytaradi. Dialog paytida bossangiz, dialog bekor bo'ladi.",
         reply_markup=commands_kb(),
     )
 
@@ -916,13 +926,27 @@ async def check_subscriptions() -> None:
             left_days = (end - now).total_seconds() / 86400
             if left_days <= 3 and not r["reminded3"]:
                 try:
-                    await bot.send_message(uid, f"⚠️ Obunangiz {fmt_dt(r['end_at'])} da tugaydi (3 kundan kam qoldi). Muddat tugashidan oldin uzaysangiz, uzluksiz davom etadi.")
+                    await bot.send_message(
+                        uid,
+                        "⚠️ <b>Obuna tugashiga 3 kundan kam qoldi</b>\n"
+                        "\n"
+                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
+                        "\n"
+                        "Uzilishsiz davom etishi uchun muddat tugashidan oldin obunani uzaytiring: /start",
+                    )
                 except Exception:
                     pass
                 await _set_flag("reminded3", uid)
             if left_days <= 1 and not r["reminded1"]:
                 try:
-                    await bot.send_message(uid, f"🚨 Obunangiz 1 kundan kam qoldi – {fmt_dt(r['end_at'])} da tugaydi.")
+                    await bot.send_message(
+                        uid,
+                        "🚨 <b>Obuna tugashiga 1 kundan kam qoldi</b>\n"
+                        "\n"
+                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
+                        "\n"
+                        "Kanaldan chiqib ketmaslik uchun hoziroq uzaytiring: /start",
+                    )
                 except Exception:
                     pass
                 await _set_flag("reminded1", uid)

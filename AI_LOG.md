@@ -8,7 +8,8 @@
 Telegram yopiq kanal uchun pullik obuna boti. Foydalanuvchi tarif tanlaydi, karta raqamlariga pul o'tkazadi,
 chek skrinshotini yuboradi. Admin tasdiqlaydi, bot bir martalik invite link beradi. Muddat tugashidan oldin
 eslatadi, tugaganda kanaldan chiqaradi. Stack: Python, aiogram 3, SQLite. Deploy: Railway (Volume `/data`).
-GitHub (public): https://github.com/easyMeta7/MusoFX, branch `main`. Railway shu `main` dan deploy qilinadi.
+GitHub (public): https://github.com/easyMeta7/YopiqKanalBot (2026-10-08 gacha nomi `MusoFX` edi), branch `main`.
+Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `main` ga qo'shilishidan oldin turadi.
 
 ## Fayllar
 | Fayl | Vazifasi |
@@ -39,6 +40,8 @@ GitHub (public): https://github.com/easyMeta7/MusoFX, branch `main`. Railway shu
   qo'yilmaydi va keyingi aylanishda qayta uriniladi.
 - Backup: har 6 soatda sqlite backup API bilan nusxa olinib `BACKUP_CHANNEL_ID` kanaliga fayl sifatida yuboriladi
   (bot ishga tushganda ham birinchi marta yuboradi).
+- Railway: loyiha `eloquent-curiosity`, servis `YopiqKanalBot`, Volume `musofx-volume` (`/data`, 500 MB).
+  Tekshiruv tsikli (`CHECK_INTERVAL_SEC`, default 600 s) muvaffaqiyatli ishlaganda log yozmaydi, faqat xatoda yozadi.
 - FSM holati `MemoryStorage` da: bot qayta ishga tushsa, tugallanmagan dialoglar yo'qoladi (normal).
 
 ## Qabul qilingan qarorlar
@@ -74,6 +77,32 @@ GitHub (public): https://github.com/easyMeta7/MusoFX, branch `main`. Railway shu
 ```
 
 ## O'zgarishlar jurnali (yangisi tepada)
+
+### 2026-10-08, Claude (claude.ai chat)
+- Admin yordam matni ("🛠 Buyruqlar") qayta yozildi: har tugma alohida blok, sarlavha qalin, misollar `<code>` ichida.
+  "Matn buyruqlari ham ishlaydi" qatori OLIB TASHLANDI (foydalanuvchi qarori, qaytarmang). Buyruqlarning o'zi
+  (`/users`, `/add`, `/addmin`, `/kick`, `/link`, `/obuna`) ishlayveradi.
+- 3 kun va 1 kun eslatmalari qayta yozildi: sarlavha, "Tugash vaqti: ...", uzaytirish uchun `/start`.
+  Muddat tugagan xabar (resub/feedback tugmalari bilan) o'zgarmadi.
+- Fayllar: bot.py (`kb_help`, `check_subscriptions`), test_fixes.py (7-bo'lim)
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi. Hali `main` ga push qilinmagan.
+
+### 2026-10-08, Claude (claude.ai chat)
+- Railway loglari tahlil qilindi (kod xato emas): 2 daqiqalik test obunada 3 va 1 kunlik eslatmalar kelmadi, chunki
+  `CHECK_INTERVAL_SEC=600` va tekshiruv obuna faol paytda ishlamadi. Obuna tugagach tekshiruv faqat chiqarish
+  va "tugadi" xabarini bajaradi (to'g'ri ishladi, 08:05 da). Eslatmalarni sinash uchun vaqtincha
+  `CHECK_INTERVAL_SEC=30` qo'ying, keyin `600` ga qaytaring. Obuna kunlar bilan o'lchanadigan haqiqiy ishda muammo yo'q.
+- Tugagan obunachiga `expired_msg=1` qo'yiladi: keyingi tekshiruvlarda qayta xabar yuborilmaydi va Telegram'ga
+  murojaat bo'lmaydi.
+
+### 2026-10-08, Claude (claude.ai chat)
+- GitHub repo nomi `MusoFX` dan `YopiqKanalBot` ga o'zgartirildi (eski havola yo'naltiriladi). Faqat hujjat
+  (shu fayl) yangilandi, kodga tegilmadi.
+- Eslatma: nom o'zgargandan keyin Railway avto-deploy to'xtab qolishi mumkin. Tekshirish: servis > Settings >
+  Source da repo topilganini ko'ring, kichik commit push qilib build boshlanishini kuzating. Kerak bo'lsa reponi
+  uzib qayta ulang. Servisni o'chirmang (obunachilar bazasi Volume'da, `/data`).
+- Lokal papkada: `git remote set-url origin https://github.com/easyMeta7/YopiqKanalBot.git`
+- Fayllar: AI_LOG.md
 
 ### 2026-10-08, Claude (claude.ai chat)
 - "👥 Obunachilar ro'yxati" va `/users` endi faqat FAOL obunachilarni ko'rsatadi (muddati tugaganlar chiqmaydi,
