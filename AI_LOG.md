@@ -34,6 +34,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - Link (`/link` va tugma) faqat faol obunachiga yuboriladi; boshqalarga kirish "➕ Qo'shish" orqali.
 - Eslatmalar: 3 kun va 1 kun qolganda; tekshiruvda 1 kundan kam qolgan bo'lsa faqat 1 kunlik ketadi.
 - Broadcast hisobotida yetgan va yetmaganlar soni ko'rsatiladi; Telegram RetryAfter bersa qayta uriniladi.
+- Obunachi klaviaturasi: "📋 Obuna holati", "💳 Tariflar" (`user_kb`).
 - "/" menyusi: hammaga `/start`, `/obuna`; adminlarga (o'z chatida) `/users`, `/add`, `/kick`, `/link` ham.
 - Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/kick`, `/link` va klaviatura
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
@@ -131,6 +132,10 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   bilan `ADMIN_COMMANDS` (+ `/users`, `/add`, `/kick`, `/link` tavsifi bilan). Avval `/users` hammaga ko'rinardi.
   Admin botga /start bosmagan bo'lsa xato logga yoziladi; admin `/start` bosganda menyu qayta o'rnatiladi.
   Test: 17-bo'lim.
+- Obunachi klaviaturasi `user_kb()`: "📋 Obuna holati" (`kb_status`, `/obuna` bilan bir xil, holatni buzmaydi) va
+  "💳 Tariflar" (`kb_plans`, tarif tanlash). `/start` (avval `ReplyKeyboardRemove` edi), "To'lov tasdiqlandi" va
+  "Sizga obuna berildi" xabarlari bilan keladi. Handlerlar holat handlerlaridan OLDIN (chek kutilayotganda ham ishlaydi).
+  `status_text` obunasi yo'qqa "💳 Tariflar tugmasini bosing" deydi. Test: 18-bo'lim.
 - Natija: testlar 8 bo'limdan 16 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
   `main` ga hali qo'shilmagan va push qilinmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.

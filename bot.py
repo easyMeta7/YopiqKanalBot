@@ -53,7 +53,6 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 
 from dotenv import load_dotenv
@@ -381,12 +380,19 @@ def is_active(sub: sqlite3.Row | None) -> bool:
 def status_text(user_id: int) -> str:
     sub = get_sub(user_id)
     if not is_active(sub):
-        return "❌ Faol obunangiz yo'q. /start orqali tarif tanlang."
+        return "❌ Faol obunangiz yo'q. Tarif tanlash uchun 💳 Tariflar tugmasini bosing."
     left = datetime.fromisoformat(sub["end_at"]) - now_tashkent()
     return (
         f"✅ Faol obuna.\n"
         f"Muddat: <b>{fmt_dt(sub['end_at'])}</b>\n"
         f"Qoldi: ~{left.days} kun"
+    )
+
+def user_kb() -> ReplyKeyboardMarkup:
+    """Obunachi (admin bo'lmagan) uchun doimiy klaviatura."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📋 Obuna holati"), KeyboardButton(text="💳 Tariflar")]],
+        resize_keyboard=True,
     )
 
 def main_kb() -> ReplyKeyboardMarkup:
@@ -438,12 +444,23 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
     await msg.answer(
         "👋 Assalomu alaykum!\n\n"
         "Bu bot orqali yopiq kanalga obuna bo'lasiz.",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=user_kb(),
     )
     await msg.answer(
         "Quyidagi tarifni tanlang:",
         reply_markup=plans_kb(with_contact=True),
     )
+
+# Bu ikki tugma holat (state) handlerlaridan OLDIN turishi kerak: chek kutilayotganda
+# bosilsa ham ishlaydi ("rasm yuboring" deb javob bermaydi).
+@router.message(F.text == "📋 Obuna holati")
+async def kb_status(msg: Message) -> None:
+    await msg.answer(status_text(msg.from_user.id))
+
+@router.message(F.text == "💳 Tariflar")
+async def kb_plans(msg: Message, state: FSMContext) -> None:
+    await state.clear()
+    await msg.answer("Quyidagi tarifni tanlang:", reply_markup=plans_kb(with_contact=True))
 
 @router.message(F.text == "🔙 Orqaga")
 async def kb_back(msg: Message, state: FSMContext) -> None:
@@ -620,10 +637,10 @@ async def cb_approve(cb: CallbackQuery) -> None:
     end_iso = get_sub(uid)["end_at"]
     try:
         if was_in:
-            await bot.send_message(uid, f"✅ To'lov tasdiqlandi! Siz kanaldasiz, obunangiz {fmt_dt(end_iso)} gacha uzaytirildi.")
+            await bot.send_message(uid, f"✅ To'lov tasdiqlandi! Siz kanaldasiz, obunangiz {fmt_dt(end_iso)} gacha uzaytirildi.", reply_markup=user_kb())
         else:
             link = await make_invite_link(uid)
-            await bot.send_message(uid, f"✅ To'lov tasdiqlandi!\n\nKanalga kirish linki (24 soat, 1 martalik):\n{link}\n\nMuddat: {fmt_dt(end_iso)}")
+            await bot.send_message(uid, f"✅ To'lov tasdiqlandi!\n\nKanalga kirish linki (24 soat, 1 martalik):\n{link}\n\nMuddat: {fmt_dt(end_iso)}", reply_markup=user_kb())
     except Exception as e:
         await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}")
     await cb.answer("✅ Tasdiqlandi")
@@ -687,7 +704,7 @@ async def grant_and_send(uid: int, start: datetime, end: datetime, replace: bool
         return
     try:
         link = await make_invite_link(uid)
-        await bot.send_message(uid, f"✅ Sizga obuna berildi.\nLink (24 soat, 1 martalik): {link}\nMuddat: {fmt_dt(end_iso)}")
+        await bot.send_message(uid, f"✅ Sizga obuna berildi.\nLink (24 soat, 1 martalik): {link}\nMuddat: {fmt_dt(end_iso)}", reply_markup=user_kb())
         await msg.answer(f"✅ {uid} ga link yuborildi. Muddat: {fmt_dt(end_iso)}")
     except Exception as e:
         await msg.answer(f"❌ {uid} ga link yuborilmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}\nMuddat bazaga yozildi: {fmt_dt(end_iso)}")

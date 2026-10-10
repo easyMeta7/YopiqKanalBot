@@ -25,6 +25,8 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 | `/kick <id>` | admin | Kanaldan chiqarish |
 | `/link <id>` | admin | Invite linkni qayta yuborish |
 
+Obunachi `/start` bosgach pastda "📋 Obuna holati" va "💳 Tariflar" tugmalari chiqadi.
+
 Admin klaviaturasida shular tugma sifatida ham bor, qo'shimcha: 🧪 Test obuna (N daqiqalik obuna, muddatni
 almashtiradi) va 📢 Broadcast (barcha faol obunachilarga xabar).
 

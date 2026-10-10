@@ -459,5 +459,30 @@ start_msg = SimpleNamespace(from_user=SimpleNamespace(id=admins[1]), answer=id_m
 asyncio.run(bot.cmd_start(start_msg, St9()))      # keyin /start bosdi -> menyu o'rnatiladi
 assert menus17[admins[1]] == menus17[admins[0]]
 print("17. Menyular OK")
-print("\nHAMMA TEST O'TDI ✅ (17)")
+
+# 18. Obunachi klaviaturasi: 📋 Obuna holati, 💳 Tariflar
+out18 = []
+def user_msg(text, uid=998):
+    async def answer(t, reply_markup=None, **k): check_html(t); out18.append((t, reply_markup))
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=uid, username="u998"), answer=answer)
+asyncio.run(bot.cmd_start(user_msg("/start"), St9()))
+kbs = [m for _, m in out18 if isinstance(m, bot.ReplyKeyboardMarkup)]
+assert len(kbs) == 1 and [b.text for b in kbs[0].keyboard[0]] == ["📋 Obuna holati", "💳 Tariflar"], out18
+out18.clear()
+asyncio.run(bot.kb_status(user_msg("📋 Obuna holati")))
+assert "Faol obunangiz yo'q" in out18[0][0] and "💳 Tariflar" in out18[0][0], out18
+now18 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(998, None, now18, now18 + timedelta(days=10), replace=True)
+asyncio.run(bot.kb_status(user_msg("📋 Obuna holati")))
+assert "Faol obuna" in out18[1][0], out18
+st = St9()
+asyncio.run(bot.kb_plans(user_msg("💳 Tariflar"), st))
+assert st.cleared and isinstance(out18[2][1], bot.InlineKeyboardMarkup)
+assert out18[2][1].inline_keyboard[0][0].callback_data == "plan:1"
+# tugmalar holat (state) handlerlaridan OLDIN ro'yxatdan o'tgan: chek kutilayotganda ham ishlaydi
+names = [h.callback.__name__ for h in bot.router.message.handlers]
+assert names.index("kb_status") < names.index("not_photo") and names.index("kb_status") < names.index("got_feedback")
+assert names.index("kb_plans") < names.index("not_photo")
+print("18. Obunachi klaviaturasi OK")
+print("\nHAMMA TEST O'TDI ✅ (18)")
 
