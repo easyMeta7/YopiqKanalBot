@@ -26,7 +26,7 @@ Railway shu `main` dan deploy qilinadi. Ish alohida shoxda qilinadi, foydalanuvc
 ## Joriy holat (2026-10-08)
 - Tariflar: 1 oy = 30 kun = 100 000 so'm; 3 oy = 90 kun = 270 000 so'm (`PLANS`).
 - Vaqt zonasi: Toshkent (UTC+5), `now_tashkent()`. Hamma sana shu zonada saqlanadi.
-- Env: `BOT_TOKEN`, `CHANNEL_ID`, `ADMIN_IDS` (vergul bilan), `CARD_VISA`, `CARD_HUMO`, `CARD_UZCARD`, `CARD_OWNER`,
+- Env: `BACKUP_INTERVAL_HOURS` (default 6), `BOT_TOKEN`, `CHANNEL_ID`, `ADMIN_IDS` (vergul bilan), `CARD_VISA`, `CARD_HUMO`, `CARD_UZCARD`, `CARD_OWNER`,
   `ADMIN_CONTACT_USERNAME`, `CHECK_INTERVAL_SEC` (600), `DB_PATH` (Railway: `/data/bot.db`), `BACKUP_CHANNEL_ID`.
 - DB jadvallari: `subs` (user_id, username, start_at, end_at, reminded3, reminded1, expired_msg),
   `receipts` (rid, status pending/approved/rejected, admin_id, admin_name, decided_at, photo_uid).
@@ -45,7 +45,7 @@ Railway shu `main` dan deploy qilinadi. Ish alohida shoxda qilinadi, foydalanuvc
 - Muddat tugaganda: `in_channel()` True/False/None qaytaradi. None yoki chiqarish xatosida `expired_msg` belgisi
   qo'yilmaydi va keyingi aylanishda qayta uriniladi.
 - Adminga ogohlantirish: kanaldan chiqarib bo'lmasa va backup xato bersa (bir muammo uchun bir marta, hal bo'lsa xabar).
-- Backup: har 6 soatda sqlite backup API bilan nusxa olinib `BACKUP_CHANNEL_ID` kanaliga fayl sifatida yuboriladi
+- Backup: har `BACKUP_INTERVAL_HOURS` (default 6) soatda sqlite backup API bilan nusxa olinib `BACKUP_CHANNEL_ID` kanaliga fayl sifatida yuboriladi
   (bot ishga tushganda ham birinchi marta yuboradi).
 - Railway: loyiha `eloquent-curiosity`, servis `YopiqKanalBot`, Volume `musofx-volume` (`/data`, 500 MB).
   Tekshiruv tsikli (`CHECK_INTERVAL_SEC`, default 600 s) muvaffaqiyatli ishlaganda log yozmaydi, faqat xatoda yozadi.
@@ -95,6 +95,10 @@ Railway shu `main` dan deploy qilinadi. Ish alohida shoxda qilinadi, foydalanuvc
   deploydan keyin botda yangilanadi. Bo'sh qoldirilgan karta to'lov xabarida ko'rinmaydi.
 - 1: `cards_text` karta raqami va `CARD_OWNER` ni `html.escape` qiladi (avval egasi ismida `&`/`<` bo'lsa
   to'lov xabari umuman yuborilmasdi). Test: 20-bo'lim.
+- 2: `BACKUP_INTERVAL_HOURS` (yangi env, butun soat > 0, default 6). Yo'q/noto'g'ri/0 bo'lsa 6 + log ogohlantirish
+  (foydalanuvchi qarori: 0 backupni O'CHIRMAYDI; o'chirish faqat `BACKUP_CHANNEL_ID` ni olib tashlash bilan).
+  `backup_loop`, backup xatosi xabari ("N soatdan keyin qayta urinadi") va ishga tushish logi shu qiymatni oladi.
+  README, .env.example yangilandi. Test: 21-bo'lim.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop): `cleanup-v1` shoxi (xatolar + tozalash, birma-bir)

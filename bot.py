@@ -22,7 +22,7 @@ Asosiy funksiyalar:
   - 🧪 Test obuna tugmasi - N daqiqalik obuna (eski muddatni ALMASHTIRADI)
   - /kick <id>, /link <id>
   - 📢 Broadcast  - barcha faol obunachilarga xabar
-  - 📂 Auto-Backup - har 6 soatda baza nusxasi BACKUP_CHANNEL_ID kanaliga
+  - 📂 Auto-Backup - har BACKUP_INTERVAL_HOURS (default 6) soatda baza nusxasi BACKUP_CHANNEL_ID kanaliga
 """
 
 import asyncio
@@ -89,6 +89,22 @@ PLANS = {
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bot")
+
+BACKUP_DEFAULT_HOURS = 6
+
+def read_backup_hours() -> int:
+    """BACKUP_INTERVAL_HOURS (butun soat, > 0). Yo'q bo'lsa 6; noto'g'ri yoki 0 bo'lsa ham 6 + ogohlantirish.
+    Backupni o'chirish uchun BACKUP_CHANNEL_ID olib tashlanadi, bu o'zgaruvchi emas."""
+    raw = os.getenv("BACKUP_INTERVAL_HOURS", "").strip()
+    if not raw:
+        return BACKUP_DEFAULT_HOURS
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    log.warning("BACKUP_INTERVAL_HOURS=%r noto'g'ri (butun soat, 0 dan katta bo'lishi kerak), %s soat ishlatiladi",
+                raw, BACKUP_DEFAULT_HOURS)
+    return BACKUP_DEFAULT_HOURS
+
+BACKUP_INTERVAL_HOURS = read_backup_hours()
 
 bot = Bot(
     token=BOT_TOKEN,
@@ -1124,7 +1140,7 @@ async def run_backup_once() -> None:
                 f"Sabab: {html.escape(str(e)[:200])}\n"
                 "\n"
                 "Bot backup kanalida admin ekanini va BACKUP_CHANNEL_ID to'g'riligini tekshiring. "
-                "Bot 6 soatdan keyin qayta urinadi."
+                f"Bot {BACKUP_INTERVAL_HOURS} soatdan keyin qayta urinadi."
             )
         return
     if _backup_alerted:
@@ -1134,7 +1150,7 @@ async def run_backup_once() -> None:
 async def backup_loop() -> None:
     while True:
         await run_backup_once()
-        await asyncio.sleep(6 * 3600)
+        await asyncio.sleep(BACKUP_INTERVAL_HOURS * 3600)
 
 # ---------------------------------------------------------------------------
 # Ishga tushirish
@@ -1174,7 +1190,7 @@ async def main() -> None:
     tasks = [asyncio.create_task(checker_loop()), asyncio.create_task(backup_loop())]
     for t in tasks:
         t.add_done_callback(_log_task_end)
-    log.info("Bot ishga tushdi (tekshiruv har %s soniyada, backup har 6 soatda)", CHECK_INTERVAL_SEC)
+    log.info("Bot ishga tushdi (tekshiruv har %s soniyada, backup har %s soatda)", CHECK_INTERVAL_SEC, BACKUP_INTERVAL_HOURS)
     try:
         await dp.start_polling(bot)
     finally:

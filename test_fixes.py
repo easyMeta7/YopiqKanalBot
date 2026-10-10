@@ -530,5 +530,39 @@ check_html(t20)
 assert "Karimov &amp; &lt;Co&gt;" in t20 and "<code>8600 &lt;1111&gt;</code>" in t20, t20
 bot.CARD_OWNER, bot.CARDS = orig_owner, orig_cards
 print("20. Karta ma'lumotlari escape OK")
-print("\nHAMMA TEST O'TDI ✅ (20)")
+
+# 21. BACKUP_INTERVAL_HOURS: soatlarda, yo'q/noto'g'ri/0 bo'lsa 6
+for raw, want in ((None, 6), ("", 6), ("12", 12), (" 24 ", 24), ("0", 6), ("abc", 6), ("-5", 6), ("1.5", 6)):
+    if raw is None:
+        os.environ.pop("BACKUP_INTERVAL_HOURS", None)
+    else:
+        os.environ["BACKUP_INTERVAL_HOURS"] = raw
+    logs11.clear()
+    assert bot.read_backup_hours() == want, (raw, bot.read_backup_hours())
+    if raw not in (None, "", "12", " 24 "):
+        assert any("BACKUP_INTERVAL_HOURS" in l for l in logs11), (raw, logs11)   # ogohlantirish
+os.environ.pop("BACKUP_INTERVAL_HOURS", None)
+# xato xabari va tsikl haqiqiy qiymatni ishlatadi
+bot.BACKUP_INTERVAL_HOURS = 12
+bot._backup_alerted = False
+msgs21 = []
+async def fake_send21(uid, text, **k): msgs21.append(text)
+bot.bot.send_message = fake_send21
+bot.bot.send_document = doc_fail
+asyncio.run(bot.run_backup_once())
+assert "12 soatdan keyin" in msgs21[0], msgs21
+sleeps21 = []
+async def fake_once(): pass
+async def fake_sleep21(sec): sleeps21.append(sec); raise asyncio.CancelledError
+orig_once, orig_sleep = bot.run_backup_once, bot.asyncio.sleep
+bot.run_backup_once = fake_once
+bot.asyncio.sleep = fake_sleep21
+try:
+    asyncio.run(bot.backup_loop())
+except asyncio.CancelledError:
+    pass
+bot.run_backup_once, bot.asyncio.sleep = orig_once, orig_sleep
+assert sleeps21 == [12 * 3600], sleeps21
+print("21. Backup intervali OK")
+print("\nHAMMA TEST O'TDI ✅ (21)")
 

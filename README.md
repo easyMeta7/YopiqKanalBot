@@ -52,7 +52,8 @@ python bot.py
    - `ADMIN_CONTACT_USERNAME`: "Admin bilan bog'lanish" tugmasi uchun (`@` siz)
    - `CHECK_INTERVAL_SEC`: `600`
    - `DB_PATH`: `/data/bot.db`
-   - `BACKUP_CHANNEL_ID`: backup yuboriladigan kanal ID (bot u yerda admin bo'lsin)
+   - `BACKUP_CHANNEL_ID`: backup yuboriladigan kanal ID (bot u yerda admin bo'lsin). Olib tashlansa, backup o'chadi
+   - `BACKUP_INTERVAL_HOURS`: backup necha soatda bir (ixtiyoriy, default `6`)
 4. ⚠️ **Volume** (obunachilar bazasi saqlanishi uchun, shart):
    - Settings → **Volumes** → *New Volume* → mount path: **`/data`**
    - `DB_PATH=/data/bot.db` bilan birgalikda ishlaydi
