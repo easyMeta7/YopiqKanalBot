@@ -11,15 +11,15 @@ Python + aiogram 3 + SQLite. Railway'ga deploy qilinadi.
   4. Token, karta raqami va boshqa sirlarni logga yozmang.
 
 Asosiy funksiyalar:
-  - To'lov: chek skrinshoti -> admin tasdiqlashi -> bir martalik invite link
+  - To'lov: chek (rasm yoki PDF) -> admin tasdiqlashi -> bir martalik invite link
   - Takroriy chek ogohlantirishi (bir xil rasm qayta kelsa adminga ⚠️)
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
   - Muddat tugaganda kanaldan chiqarish (xato bo'lsa keyingi aylanishda qayta uriniladi)
   - Chiqarib bo'lmasa yoki backup xato bersa, adminlarga ogohlantirish (bir muammo uchun bir marta)
-  - Admin: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
+  - Admin: /users, /add, /kick, /link + klaviatura tugmalari
   - /add <id> <kun>   - muddatni uzaytiradi
   - /add <id> <sana>  - tugash sanasini aniq qo'yadi (31-12-2026), eski a'zolar uchun
-  - /addmin <id> <daqiqa> - test rejimi (eski muddatni ALMASHTIRADI)
+  - 🧪 Test obuna tugmasi - N daqiqalik obuna (eski muddatni ALMASHTIRADI)
   - /kick <id>, /link <id>
   - 📢 Broadcast  - barcha faol obunachilarga xabar
   - 📂 Auto-Backup - har 6 soatda baza nusxasi BACKUP_CHANNEL_ID kanaliga
@@ -38,13 +38,14 @@ from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     FSInputFile,
@@ -52,7 +53,6 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 
 from dotenv import load_dotenv
@@ -158,9 +158,7 @@ def claim_receipt(rid: str, status: str, admin_id: int, admin_name: str) -> sqli
     """Chekni atomik egallaydi: faqat birinchi bosgan admin o'tadi (None qaytadi).
     Keyingilarga mavjud yozuv qaytadi."""
     now = now_tashkent().replace(microsecond=0).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
+    with db() as conn:
         cur = conn.execute(
             "UPDATE receipts SET status=?, admin_id=?, admin_name=?, decided_at=? "
             "WHERE rid=? AND status='pending'",
@@ -178,8 +176,6 @@ def claim_receipt(rid: str, status: str, admin_id: int, admin_name: str) -> sqli
             conn.commit()
             return None
         return row
-    finally:
-        conn.close()
 
 def find_duplicate_receipt(photo_uid: str, exclude_rid: str) -> sqlite3.Row | None:
     """Xuddi shu rasm (file_unique_id) avval kelganmi? Tahrirlanmagan bir xil
@@ -213,7 +209,7 @@ def upsert_sub(user_id: int, username: str | None, start_at: datetime, end_at: d
             )
         else:
             old_end = datetime.fromisoformat(row["end_at"])
-            base = max(now_tashkent(), old_end)
+            base = max(now_tashkent().replace(microsecond=0), old_end)
             conn.execute(
                 "UPDATE subs SET username=?, end_at=?, reminded3=0, reminded1=0, expired_msg=0 WHERE user_id=?",
                 (username or row["username"], (base + duration).isoformat(), user_id),
@@ -223,6 +219,15 @@ def upsert_sub(user_id: int, username: str | None, start_at: datetime, end_at: d
 def all_subs() -> list[sqlite3.Row]:
     with db() as conn:
         return conn.execute("SELECT * FROM subs ORDER BY end_at DESC").fetchall()
+
+def subs_to_check() -> list[sqlite3.Row]:
+    """Tekshiruv uchun: tugash xabari hali yuborilmaganlar (faollar va endi tugaganlar)."""
+    with db() as conn:
+        return conn.execute("SELECT * FROM subs WHERE expired_msg = 0").fetchall()
+
+def count_subs() -> int:
+    with db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM subs").fetchone()[0]
 
 # ---------------------------------------------------------------------------
 # Yordamchilar
@@ -278,6 +283,16 @@ async def add_by_days_or_date(uid: int, arg: str, msg: Message) -> bool:
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+async def notify_admins(text: str, except_id: int | None = None) -> None:
+    """Barcha adminlarga xabar (except_id – o'tkazib yuboriladigan admin, masalan tugmani bosgan)."""
+    for admin_id in ADMIN_IDS:
+        if admin_id == except_id:
+            continue
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception as e:
+            log.warning("Adminga (%s) xabar yuborilmadi: %s", admin_id, e)
 
 async def in_channel(user_id: int) -> bool | None:
     """True/False – aniq javob. None – tekshirib bo'lmadi (tarmoq/API xatosi)."""
@@ -356,20 +371,28 @@ def cards_text() -> str:
     for name, number in CARDS:
         if number:
             lines.append(f"{name}: <code>{number}</code>")
-    if not lines:
-        lines.append(f"Karta: <code>{os.getenv('CARD_NUMBER', '')}</code>")
     lines.append(f"Karta egasi: {CARD_OWNER}")
     return "\n".join(lines)
 
+def is_active(sub: sqlite3.Row | None) -> bool:
+    return sub is not None and datetime.fromisoformat(sub["end_at"]) > now_tashkent()
+
 def status_text(user_id: int) -> str:
     sub = get_sub(user_id)
-    if not sub or datetime.fromisoformat(sub["end_at"]) <= now_tashkent():
-        return "❌ Faol obunangiz yo'q. /start orqali tarif tanlang."
+    if not is_active(sub):
+        return "❌ Faol obunangiz yo'q. Tarif tanlash uchun 💳 Tariflar tugmasini bosing."
     left = datetime.fromisoformat(sub["end_at"]) - now_tashkent()
     return (
         f"✅ Faol obuna.\n"
         f"Muddat: <b>{fmt_dt(sub['end_at'])}</b>\n"
         f"Qoldi: ~{left.days} kun"
+    )
+
+def user_kb() -> ReplyKeyboardMarkup:
+    """Obunachi (admin bo'lmagan) uchun doimiy klaviatura."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📋 Obuna holati"), KeyboardButton(text="💳 Tariflar")]],
+        resize_keyboard=True,
     )
 
 def main_kb() -> ReplyKeyboardMarkup:
@@ -402,6 +425,10 @@ def commands_kb() -> ReplyKeyboardMarkup:
 async def cmd_start(msg: Message, state: FSMContext) -> None:
     await state.clear()
     if is_admin(msg.from_user.id):
+        try:  # bot ishga tushganda bu admin /start bosmagan bo'lsa, menyu shu yerda o'rnatiladi
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=msg.from_user.id))
+        except Exception as e:
+            log.warning("Admin %s uchun menyu o'rnatilmadi: %s", msg.from_user.id, e)
         await msg.answer(
             "👋 Assalomu alaykum, admin!\n\n"
             "Pastdagi tugmalar orqali obunachilarni boshqaring.",
@@ -417,12 +444,23 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
     await msg.answer(
         "👋 Assalomu alaykum!\n\n"
         "Bu bot orqali yopiq kanalga obuna bo'lasiz.",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=user_kb(),
     )
     await msg.answer(
         "Quyidagi tarifni tanlang:",
         reply_markup=plans_kb(with_contact=True),
     )
+
+# Bu ikki tugma holat (state) handlerlaridan OLDIN turishi kerak: chek kutilayotganda
+# bosilsa ham ishlaydi ("rasm yuboring" deb javob bermaydi).
+@router.message(F.text == "📋 Obuna holati")
+async def kb_status(msg: Message) -> None:
+    await msg.answer(status_text(msg.from_user.id))
+
+@router.message(F.text == "💳 Tariflar")
+async def kb_plans(msg: Message, state: FSMContext) -> None:
+    await state.clear()
+    await msg.answer("Quyidagi tarifni tanlang:", reply_markup=plans_kb(with_contact=True))
 
 @router.message(F.text == "🔙 Orqaga")
 async def kb_back(msg: Message, state: FSMContext) -> None:
@@ -459,10 +497,10 @@ async def kb_help(msg: Message) -> None:
         "Foydalanuvchini kanaldan chiqaradi va obunasini yopadi. Faqat ID yuborasiz.\n"
         "\n"
         "🔗 <b>Link</b>\n"
-        "Kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
+        "Faol obunachiga kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
         "\n"
         "📢 <b>Broadcast</b>\n"
-        "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani yoziladi.\n"
+        "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani va yetmagani yoziladi.\n"
         "\n"
         "🔙 <b>Orqaga</b>\n"
         "Asosiy menyuga qaytaradi. Dialog paytida bossangiz, dialog bekor bo'ladi.",
@@ -485,35 +523,54 @@ async def cb_plan(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.message.answer(
         f"💳 <b>{PLANS[pid]['name']}</b> – {price} so'm\n\n"
         f"{cards_text()}\n\n"
-        f"To'lovdan keyin chek skrinshotini shu yerga yuboring."
+        f"To'lovdan keyin chekni shu yerga yuboring (skrinshot yoki PDF)."
     )
     await cb.answer()
 
-@router.message(Pay.waiting_photo, F.photo)
+def _receipt_file(msg: Message) -> tuple[str, str, str] | None:
+    """Chek fayli: (turi, file_id, file_unique_id). Rasm, yoki fayl ko'rinishidagi PDF/rasm.
+    Boshqa narsa bo'lsa None."""
+    if msg.photo:
+        p = msg.photo[-1]
+        return "photo", p.file_id, p.file_unique_id or ""
+    d = msg.document
+    if d is not None:
+        mime = (d.mime_type or "").lower()
+        name = (d.file_name or "").lower()
+        if mime == "application/pdf" or mime.startswith("image/") or name.endswith(".pdf"):
+            return "document", d.file_id, d.file_unique_id or ""
+    return None
+
+@router.message(Pay.waiting_photo, F.photo | F.document)
 async def got_receipt(msg: Message, state: FSMContext) -> None:
+    receipt = _receipt_file(msg)
+    if receipt is None:
+        await msg.answer("Chekni rasm yoki PDF ko'rinishida yuboring.")
+        return
+    kind, file_id, file_uid = receipt
     data = await state.get_data()
     pid = data.get("plan", 1)
     await state.clear()
     price = f"{PLANS[pid]['price']:,}".replace(",", " ")
     rid = uuid.uuid4().hex[:16]
-    photo_uid = msg.photo[-1].file_unique_id or ""
-    register_receipt(rid, photo_uid)
-    dup = find_duplicate_receipt(photo_uid, exclude_rid=rid)
+    register_receipt(rid, file_uid)
+    dup = find_duplicate_receipt(file_uid, exclude_rid=rid)
     dup_info = ""
     if dup is not None:
         if dup["status"] == "pending":
-            dup_info = "⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham yuborilgan, hali hal qilinmagan.\n\n"
+            dup_info = "⚠️ <b>TAKRORLANISH!</b> Bu chek avval ham yuborilgan, hali hal qilinmagan.\n\n"
         else:
             when = f", {fmt_dt(dup['decided_at'])}" if dup["decided_at"] else ""
             dup_info = (
-                f"⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham kelgan – "
-                f"{_decision_word(dup['status']).lower()} ({dup['admin_name'] or 'admin'}{when}).\n\n"
+                f"⚠️ <b>TAKRORLANISH!</b> Bu chek avval ham kelgan – "
+                f"{_decision_word(dup['status']).lower()} ({html.escape(dup['admin_name'] or 'admin')}{when}).\n\n"
             )
+    send = bot.send_photo if kind == "photo" else bot.send_document
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_photo(
-                chat_id=admin_id,
-                photo=msg.photo[-1].file_id,
+            await send(
+                admin_id,
+                file_id,
                 caption=(
                     dup_info
                     + f"🧾 Yangi chek!\n"
@@ -535,7 +592,7 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
 
 @router.message(Pay.waiting_photo)
 async def not_photo(msg: Message) -> None:
-    await msg.answer("Iltimos, chek skrinshotini (rasm) yuboring.")
+    await msg.answer("Iltimos, chekni rasm yoki PDF ko'rinishida yuboring.")
 
 # ---------------------------------------------------------------------------
 # Tasdiqlash / rad etish
@@ -555,13 +612,26 @@ def _decision_emoji(status: str) -> str:
 async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str, by_name: str | None = None) -> None:
     who = by_name or _admin_name(cb.from_user)
     try:
-        await cb.message.edit_caption(caption=f"{emoji} {word} – {who}")
+        await cb.message.edit_caption(caption=f"{emoji} {word} – {html.escape(who)}")
     except Exception:
         pass
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
+
+async def _claim(cb: CallbackQuery, rid: str, status: str) -> bool:
+    """Chekni shu admin nomiga egallaydi. Boshqa admin allaqachon hal qilgan bo'lsa,
+    ogohlantiradi, chek ostidagi yozuvni yangilaydi va False qaytaradi."""
+    existing = claim_receipt(rid, status, cb.from_user.id, _admin_name(cb.from_user))
+    if existing is None:
+        return True
+    await cb.answer(
+        f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
+        show_alert=True,
+    )
+    await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    return False
 
 @router.callback_query(F.data.startswith("approve:"))
 async def cb_approve(cb: CallbackQuery) -> None:
@@ -571,13 +641,7 @@ async def cb_approve(cb: CallbackQuery) -> None:
     _, rid, uid_s, pid_s = cb.data.split(":")
     uid, pid = int(uid_s), int(pid_s)
     plan = PLANS[pid]
-    existing = claim_receipt(rid, "approved", cb.from_user.id, _admin_name(cb.from_user))
-    if existing is not None:
-        await cb.answer(
-            f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
-            show_alert=True,
-        )
-        await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    if not await _claim(cb, rid, "approved"):
         return
     start = now_tashkent().replace(microsecond=0)
     end = start + timedelta(days=plan["days"])
@@ -592,24 +656,18 @@ async def cb_approve(cb: CallbackQuery) -> None:
     end_iso = get_sub(uid)["end_at"]
     try:
         if was_in:
-            await bot.send_message(uid, f"✅ To'lov tasdiqlandi! Siz kanaldasiz, obunangiz {fmt_dt(end_iso)} gacha uzaytirildi.")
+            await bot.send_message(uid, f"✅ To'lov tasdiqlandi! Siz kanaldasiz, obunangiz {fmt_dt(end_iso)} gacha uzaytirildi.", reply_markup=user_kb())
         else:
             link = await make_invite_link(uid)
-            await bot.send_message(uid, f"✅ To'lov tasdiqlandi!\n\nKanalga kirish linki (24 soat, 1 martalik):\n{link}\n\nMuddat: {fmt_dt(end_iso)}")
+            await bot.send_message(uid, f"✅ To'lov tasdiqlandi!\n\nKanalga kirish linki (24 soat, 1 martalik):\n{link}\n\nMuddat: {fmt_dt(end_iso)}", reply_markup=user_kb())
     except Exception as e:
-        await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {e}")
+        await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}")
     await cb.answer("✅ Tasdiqlandi")
     await _finalize_receipt(cb, "✅", "Tasdiqlandi")
-    await _notify_other_admins(cb.from_user.id, f"✅ Chek tasdiqlandi – {_admin_name(cb.from_user)}\nFoydalanuvchi: {uid} ({plan['name']})")
-
-async def _notify_other_admins(except_id: int, text: str) -> None:
-    for admin_id in ADMIN_IDS:
-        if admin_id == except_id:
-            continue
-        try:
-            await bot.send_message(admin_id, text)
-        except Exception:
-            pass
+    await notify_admins(
+        f"✅ Chek tasdiqlandi – {html.escape(_admin_name(cb.from_user))}\nFoydalanuvchi: {uid} ({plan['name']})",
+        except_id=cb.from_user.id,
+    )
 
 @router.callback_query(F.data.startswith("reject:"))
 async def cb_reject(cb: CallbackQuery) -> None:
@@ -618,13 +676,7 @@ async def cb_reject(cb: CallbackQuery) -> None:
         return
     _, rid, uid_s = cb.data.split(":")
     uid = int(uid_s)
-    existing = claim_receipt(rid, "rejected", cb.from_user.id, _admin_name(cb.from_user))
-    if existing is not None:
-        await cb.answer(
-            f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
-            show_alert=True,
-        )
-        await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    if not await _claim(cb, rid, "rejected"):
         return
     try:
         await bot.send_message(uid, "❌ To'lov rad etildi. Savol bo'lsa, adminga yozing yoki qaytadan urinib ko'ring.")
@@ -651,12 +703,11 @@ async def cb_feedback(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Feedback.text)
 async def got_feedback(msg: Message, state: FSMContext) -> None:
+    if not msg.text:
+        await msg.answer("Iltimos, fikringizni matn ko'rinishida yozing.")
+        return
     await state.clear()
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{msg.text}")
-        except Exception:
-            pass
+    await notify_admins(f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{html.escape(msg.text)}")
     await msg.answer("Rahmat! Fikringiz adminga yuborildi.")
 
 # ---------------------------------------------------------------------------
@@ -672,10 +723,10 @@ async def grant_and_send(uid: int, start: datetime, end: datetime, replace: bool
         return
     try:
         link = await make_invite_link(uid)
-        await bot.send_message(uid, f"✅ Sizga obuna berildi.\nLink (24 soat, 1 martalik): {link}\nMuddat: {fmt_dt(end_iso)}")
+        await bot.send_message(uid, f"✅ Sizga obuna berildi.\nLink (24 soat, 1 martalik): {link}\nMuddat: {fmt_dt(end_iso)}", reply_markup=user_kb())
         await msg.answer(f"✅ {uid} ga link yuborildi. Muddat: {fmt_dt(end_iso)}")
     except Exception as e:
-        await msg.answer(f"❌ {uid} ga link yuborilmadi (botni /start bosgan bo'lishi kerak): {e}\nMuddat bazaga yozildi: {fmt_dt(end_iso)}")
+        await msg.answer(f"❌ {uid} ga link yuborilmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}\nMuddat bazaga yozildi: {fmt_dt(end_iso)}")
 
 @router.message(Command("add"))
 async def cmd_add(msg: Message) -> None:
@@ -686,19 +737,6 @@ async def cmd_add(msg: Message) -> None:
         await msg.answer("Foydalanish:\n/add &lt;user_id&gt; &lt;kun&gt;  – muddatni uzaytiradi\n/add &lt;user_id&gt; &lt;sana&gt;  – tugash sanasini aniq qo'yadi (31-12-2026)")
         return
     await add_by_days_or_date(int(parts[1]), parts[2], msg)
-
-@router.message(Command("addmin"))
-async def cmd_addmin(msg: Message) -> None:
-    if not is_admin(msg.from_user.id):
-        return
-    parts = (msg.text or "").split()
-    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
-        await msg.answer("Foydalanish: /addmin <user_id> <daqiqa>")
-        return
-    uid, minutes = int(parts[1]), int(parts[2])
-    start = now_tashkent().replace(microsecond=0)
-    end = start + timedelta(minutes=minutes)
-    await grant_and_send(uid, start, end, replace=True, msg=msg)
 
 @router.message(Command("kick"))
 async def cmd_kick(msg: Message) -> None:
@@ -718,17 +756,7 @@ async def cmd_link(msg: Message) -> None:
     if len(parts) != 2 or not parts[1].isdigit():
         await msg.answer("Foydalanish: /link <user_id>")
         return
-    uid = int(parts[1])
-    try:
-        link = await make_invite_link(uid)
-        s = get_sub(uid)
-        if s:
-            await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
-            await msg.answer(f"✅ {uid} ga link yuborildi.")
-        else:
-            await msg.answer(f"❌ {uid} obunachi emas.")
-    except Exception as e:
-        await msg.answer(f"Xato: {e}")
+    await send_link(int(parts[1]), msg)
 
 @router.message(Command("users"))
 async def cmd_users(msg: Message) -> None:
@@ -740,26 +768,30 @@ async def cmd_users(msg: Message) -> None:
 # Klaviatura dialoglari (2-daraja tugmalar)
 # ---------------------------------------------------------------------------
 
-def _need_admin(msg: Message) -> bool:
-    return is_admin(msg.from_user.id)
-
 async def _ask_uid(msg: Message, state: FSMContext, new_state: State, prompt: str) -> None:
     await state.set_state(new_state)
     await msg.answer(prompt, reply_markup=commands_kb())
 
+async def _read_uid(msg: Message) -> int | None:
+    """Dialogda yuborilgan ID ni o'qiydi. Raqam bo'lmasa, qayta so'raydi va None qaytaradi."""
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return None
+    return int(text)
+
 @router.message(F.text == "➕ Qo'shish")
 async def kb_add(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, AddDlg.user_id, "👥 Foydalanuvchi ID raqamini yuboring:")
 
 @router.message(AddDlg.user_id)
 async def kb_add_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    await state.update_data(user_id=int(text))
+    await state.update_data(user_id=uid)
     await state.set_state(AddDlg.days)
     await msg.answer(
         "📅 Necha kun qo'shilsin yoki obuna qachon tugasin?\n\n"
@@ -777,17 +809,16 @@ async def kb_add_days(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "🧪 Test obuna")
 async def kb_test(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, TestDlg.user_id, "👥 Foydalanuvchi ID raqamini yuboring:")
 
 @router.message(TestDlg.user_id)
 async def kb_test_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    await state.update_data(user_id=int(text))
+    await state.update_data(user_id=uid)
     await state.set_state(TestDlg.minutes)
     await msg.answer("⏱ Necha daqiqa? (masalan: 2)\nEski muddat almashtiriladi, uzaytirilmaydi.")
 
@@ -807,43 +838,35 @@ async def kb_test_minutes(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "❌ Chiqarish")
 async def kb_kick(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, KickDlg.user_id, "👥 Chiqariladigan foydalanuvchi ID raqamini yuboring:")
 
 @router.message(KickDlg.user_id)
 async def kb_kick_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
     await state.clear()
-    await kick_user(int(text), msg)
+    await kick_user(uid, msg)
 
 @router.message(F.text == "🔗 Link")
 async def kb_link(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, LinkDlg.user_id, "👥 Link yuboriladigan foydalanuvchi ID raqamini yuboring:")
 
 @router.message(LinkDlg.user_id)
 async def kb_link_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    uid = int(text)
     await state.clear()
-    try:
-        link = await make_invite_link(uid)
-        await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
-        await msg.answer(f"✅ {uid} ga link yuborildi.")
-    except Exception as e:
-        await msg.answer(f"Xato: {e}")
+    await send_link(uid, msg)
 
 @router.message(F.text == "📢 Broadcast")
 async def kb_broadcast(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await state.set_state(BroadcastDlg.text)
     await msg.answer("📢 Barcha faol obunachilarga yubormoqchi bo'lgan xabaringizni yozing (matn yoki rasm):", reply_markup=commands_kb())
@@ -852,21 +875,49 @@ async def kb_broadcast(msg: Message, state: FSMContext) -> None:
 async def got_broadcast_text(msg: Message, state: FSMContext) -> None:
     await state.clear()
     subs = all_subs()
-    count = 0
+    ok = failed = 0
     now = now_tashkent()
     for s in subs:
         if datetime.fromisoformat(s['end_at']) > now:
-            try:
-                await msg.copy_to(s['user_id'])
-                count += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-    await msg.answer(f"✅ Xabar {count} ta faol obunachiga yuborildi.")
+            if await _copy_with_retry(msg, s['user_id']):
+                ok += 1
+            else:
+                failed += 1
+            await asyncio.sleep(0.05)
+    text = f"✅ Xabar {ok} ta faol obunachiga yetdi."
+    if failed:
+        text += f"\n❌ {failed} tasiga yetmadi (botni bloklagan yoki o'chirgan)."
+    await msg.answer(text)
+
+async def _copy_with_retry(msg: Message, uid: int, attempts: int = 3) -> bool:
+    """Telegram "kut" (RetryAfter) desa, aytilgan vaqtcha kutib qayta uriniladi."""
+    for _ in range(attempts):
+        try:
+            await msg.copy_to(uid)
+            return True
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+        except Exception as e:
+            log.info("Broadcast %s ga yetmadi: %s", uid, e)
+            return False
+    return False
 
 # ---------------------------------------------------------------------------
 # Admin yordamchi funksiyalari
 # ---------------------------------------------------------------------------
+
+async def send_link(uid: int, msg: Message) -> None:
+    """Yangi kirish linki – faqat FAOL obunachiga. Muddati tugaganga link berilsa, bot uni
+    qayta chiqarmaydi (tugash xabari allaqachon ketgan), shuning uchun avval tekshiramiz."""
+    if not is_active(get_sub(uid)):
+        await msg.answer(f"❌ {uid} faol obunachi emas. Kirish berish uchun ➕ Qo'shish dan foydalaning.")
+        return
+    try:
+        link = await make_invite_link(uid)
+        await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
+        await msg.answer(f"✅ {uid} ga link yuborildi.")
+    except Exception as e:
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 async def kick_user(uid: int, msg: Message) -> None:
     try:
@@ -879,7 +930,7 @@ async def kick_user(uid: int, msg: Message) -> None:
             conn.commit()
         await msg.answer(f"❌ {uid} kanaldan chiqarildi va muddati yopildi.")
     except Exception as e:
-        await msg.answer(f"Xato: {e}")
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 def subs_list_text() -> str:
     """Faqat FAOL obunachilar (muddati tugaganlar ko'rsatilmaydi)."""
@@ -914,10 +965,9 @@ async def send_subs_list(msg: Message) -> None:
 # Muddatni tekshirish tsikli
 # ---------------------------------------------------------------------------
 
-async def _set_flag(field: str, uid: int) -> None:
+def _set_flag(field: str, uid: int) -> None:
     with db() as conn:
         conn.execute(f"UPDATE subs SET {field}=1 WHERE user_id=?", (uid,))
-        conn.commit()
 
 # ---------------------------------------------------------------------------
 # Adminlarga ogohlantirish (bir xil muammo uchun bir marta)
@@ -927,13 +977,6 @@ _kick_alerted: set[int] = set()        # chiqarib bo'lmagan va adminga aytilgan 
 _kick_fail_count: dict[int, int] = {}  # a'zolikni tekshirib bo'lmagan ketma-ket urinishlar
 _backup_alerted = False                # backup xatosi haqida adminga aytilganmi
 KICK_UNKNOWN_ALERT_AFTER = 3           # tekshirib bo'lmasa, shuncha urinishdan keyin ogohlantiramiz
-
-async def notify_admins(text: str) -> None:
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, text)
-        except Exception as e:
-            log.warning("Adminga (%s) xabar yuborilmadi: %s", admin_id, e)
 
 def _who(r) -> str:
     uname = f" @{r['username']}" if r["username"] else ""
@@ -970,24 +1013,12 @@ async def resolve_kick_problem(r) -> None:
 
 async def check_subscriptions() -> None:
     now = now_tashkent()
-    for r in all_subs():
+    for r in subs_to_check():
         end = datetime.fromisoformat(r["end_at"])
         uid = r["user_id"]
         if end > now:
             left_days = (end - now).total_seconds() / 86400
-            if left_days <= 3 and not r["reminded3"]:
-                try:
-                    await bot.send_message(
-                        uid,
-                        "⚠️ <b>Obuna tugashiga 3 kundan kam qoldi</b>\n"
-                        "\n"
-                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
-                        "\n"
-                        "Uzilishsiz davom etishi uchun muddat tugashidan oldin obunani uzaytiring: /start",
-                    )
-                except Exception:
-                    pass
-                await _set_flag("reminded3", uid)
+            # 1 kundan kam qolgan bo'lsa faqat 1 kunlik eslatma: 3 kunlik ham yuborilgan deb belgilanadi
             if left_days <= 1 and not r["reminded1"]:
                 try:
                     await bot.send_message(
@@ -1000,7 +1031,21 @@ async def check_subscriptions() -> None:
                     )
                 except Exception:
                     pass
-                await _set_flag("reminded1", uid)
+                _set_flag("reminded1", uid)
+                _set_flag("reminded3", uid)
+            elif left_days <= 3 and not r["reminded3"]:
+                try:
+                    await bot.send_message(
+                        uid,
+                        "⚠️ <b>Obuna tugashiga 3 kundan kam qoldi</b>\n"
+                        "\n"
+                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
+                        "\n"
+                        "Uzilishsiz davom etishi uchun muddat tugashidan oldin obunani uzaytiring: /start",
+                    )
+                except Exception:
+                    pass
+                _set_flag("reminded3", uid)
             continue
         if r["expired_msg"]:
             continue
@@ -1026,7 +1071,7 @@ async def check_subscriptions() -> None:
             await bot.send_message(uid, "🔔 Obuna muddatingiz tugadi.\n\nQaytadan obuna bo'lasizmi yoki kanal haqida qandaydir fikringiz bormi?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Qayta obuna bo'lish", callback_data="resub")], [InlineKeyboardButton(text="💭 Fikr bildirish", callback_data="feedback")]]))
         except Exception as e:
             log.error("Tugash xabari yuborilmadi %s: %s", uid, e)
-        await _set_flag("expired_msg", uid)
+        _set_flag("expired_msg", uid)
 
 async def checker_loop() -> None:
     while True:
@@ -1095,14 +1140,25 @@ async def backup_loop() -> None:
 # Ishga tushirish
 # ---------------------------------------------------------------------------
 
+USER_COMMANDS = [
+    BotCommand(command="start", description="Boshlash / tarif tanlash"),
+    BotCommand(command="obuna", description="Obuna holati"),
+]
+ADMIN_COMMANDS = USER_COMMANDS + [
+    BotCommand(command="users", description="Faol obunachilar ro'yxati"),
+    BotCommand(command="add", description="Obuna qo'shish: /add ID kun yoki sana"),
+    BotCommand(command="kick", description="Kanaldan chiqarish: /kick ID"),
+    BotCommand(command="link", description="Yangi kirish linki: /link ID"),
+]
+
 async def on_startup() -> None:
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Boshlash / tarif tanlash"),
-            BotCommand(command="obuna", description="Obuna holati"),
-            BotCommand(command="users", description="Obunachilar ro'yxati (admin)"),
-        ]
-    )
+    """"/" menyusi: hammaga oddiy buyruqlar, har bir adminga alohida to'liq ro'yxat."""
+    await bot.set_my_commands(USER_COMMANDS)
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception as e:  # admin botga hali /start bosmagan bo'lsa
+            log.warning("Admin %s uchun menyu o'rnatilmadi: %s", admin_id, e)
 
 async def main() -> None:
     if not BOT_TOKEN:
@@ -1110,15 +1166,26 @@ async def main() -> None:
     if not CHANNEL_ID or not ADMIN_IDS:
         raise SystemExit("CHANNEL_ID va ADMIN_IDS ni .env da kiriting.")
     init_db()
-    n_subs = len(all_subs())
-    log.info("DB: %s – obunachilar soni: %s", os.path.abspath(DB_PATH), n_subs)
+    log.info("DB: %s – obunachilar soni: %s", os.path.abspath(DB_PATH), count_subs())
     if not ADMIN_CONTACT_USERNAME:
         log.warning("ADMIN_CONTACT_USERNAME kiritilmagan – 'Admin bilan bog'lanish' tugmasi ko'rinmaydi.")
     await on_startup()
-    asyncio.create_task(checker_loop())
-    asyncio.create_task(backup_loop())
+    # Havolani saqlaymiz: aks holda Python fon vazifasini o'chirib yuborishi mumkin
+    tasks = [asyncio.create_task(checker_loop()), asyncio.create_task(backup_loop())]
+    for t in tasks:
+        t.add_done_callback(_log_task_end)
     log.info("Bot ishga tushdi (tekshiruv har %s soniyada, backup har 6 soatda)", CHECK_INTERVAL_SEC)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        for t in tasks:
+            t.cancel()
+
+def _log_task_end(task: asyncio.Task) -> None:
+    """Fon tsikli to'xtab qolsa (bo'lmasligi kerak), logda ko'rinsin."""
+    if task.cancelled():
+        return
+    log.error("Fon vazifasi to'xtadi: %s, xato: %r", task.get_coro().__name__, task.exception())
 
 if __name__ == "__main__":
     try:

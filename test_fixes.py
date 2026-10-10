@@ -147,7 +147,7 @@ print("\nHAMMA TEST O'TDI ✅ (6)")
 import re
 helps = []
 class AdminMsg:
-    from_user = SimpleNamespace(id=1)
+    from_user = SimpleNamespace(id=bot.ADMIN_IDS[0])
     async def answer(self, t, **k): helps.append(t)
 asyncio.run(bot.kb_help(AdminMsg()))
 h = helps[0]
@@ -157,7 +157,7 @@ for name in ("Qo'shish", "Test obuna", "Chiqarish", "Link", "Broadcast", "Orqaga
 assert h.count("<b>") == h.count("</b>") and h.count("<code>") == h.count("</code>")
 assert len(h) < 4096 and "\n\n" in h
 
-# eslatmalar: 2 daqiqa qolgan obuna -> ikkala eslatma ham, chiroyli formatda
+# eslatmalar: 2 daqiqa qolgan obuna -> faqat 1 kunlik (3 kunlik ham belgilanadi)
 sent7 = []
 async def fake_send7(uid, text, **k): sent7.append((uid, text))
 bot.bot.send_message = fake_send7
@@ -167,12 +167,19 @@ now7 = bot.now_tashkent().replace(microsecond=0)
 bot.upsert_sub(950, "rem", now7, now7 + timedelta(minutes=2), replace=True)
 asyncio.run(bot.check_subscriptions())
 texts = [t for u, t in sent7 if u == 950]
-assert len(texts) == 2, texts
-assert "3 kundan kam" in texts[0] and "1 kundan kam" in texts[1]
-for t in texts:
-    assert "Tugash vaqti: <b>" in t and "/start" in t and "\n\n" in t
+assert len(texts) == 1 and "1 kundan kam" in texts[0], texts
+assert "Tugash vaqti: <b>" in texts[0] and "/start" in texts[0] and "\n\n" in texts[0]
+s950 = bot.get_sub(950)
+assert s950["reminded1"] == 1 and s950["reminded3"] == 1
 asyncio.run(bot.check_subscriptions())   # qayta yuborilmasin
-assert len([1 for u, t in sent7 if u == 950]) == 2
+assert len([1 for u, t in sent7 if u == 950]) == 1
+# oddiy holat: 2 kun qolgan -> faqat 3 kunlik
+bot.upsert_sub(951, "rem2", now7, now7 + timedelta(days=2), replace=True)
+asyncio.run(bot.check_subscriptions())
+texts = [t for u, t in sent7 if u == 951]
+assert len(texts) == 1 and "3 kundan kam" in texts[0], texts
+assert "Tugash vaqti: <b>" in texts[0] and "/start" in texts[0] and "\n\n" in texts[0]
+assert bot.get_sub(951)["reminded1"] == 0
 print("7. Yordam matni va eslatmalar OK")
 
 # 8. Adminga ogohlantirish: chiqarib bo'lmasa va backup xato bersa
@@ -227,5 +234,291 @@ bot.bot.send_document = doc_ok
 asyncio.run(bot.run_backup_once())
 assert len([1 for u, t in msgs8 if "Backup yana ishlayapti" in t]) == len(admins)
 print("8. Adminga ogohlantirishlar OK")
-print("\nHAMMA TEST O'TDI ✅ (8)")
+
+# 9. Fikr bildirish: HTML belgilar buzmasin, matn bo'lmasa so'rasin
+from html.parser import HTMLParser
+class HtmlCheck(HTMLParser):
+    """Telegram kabi: faqat ruxsat etilgan teglar va to'g'ri yopilgan bo'lishi kerak."""
+    def __init__(self): super().__init__(); self.stack = []
+    def handle_starttag(self, tag, a):
+        assert tag in ("b", "i", "u", "s", "code", "pre", "a"), f"noma'lum teg <{tag}>"
+        self.stack.append(tag)
+    def handle_endtag(self, tag): assert self.stack and self.stack.pop() == tag, f"</{tag}>"
+def check_html(text):
+    p = HtmlCheck(); p.feed(text); p.close(); assert not p.stack, p.stack
+sent9, replies9 = [], []
+async def fake_send9(uid, text, **k):
+    check_html(text); sent9.append((uid, text))
+bot.bot.send_message = fake_send9
+class St9:
+    cleared = False
+    async def clear(self): self.cleared = True
+def fb_msg(text):
+    async def answer(t, **k): replies9.append(t)
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=5, username="u5"), answer=answer)
+st = St9()
+asyncio.run(bot.got_feedback(fb_msg("narx <tag> & 100k"), st))
+assert len(sent9) == len(admins), sent9
+assert "narx &lt;tag&gt; &amp; 100k" in sent9[0][1] and st.cleared
+sent9.clear(); replies9.clear(); st = St9()
+asyncio.run(bot.got_feedback(fb_msg(None), st))   # rasm/stiker: matn yo'q
+assert not sent9 and not st.cleared and "matn" in replies9[0], (sent9, replies9)
+print("9. Fikr bildirish OK")
+
+# 10. Admin ismi va xato matnlari HTML'ni buzmasin
+BAD = "Ali & <Vali>"
+sent10, captions10, answers10 = [], [], []
+async def fake_send10(uid, text, **k): check_html(text); sent10.append((uid, text))
+bot.bot.send_message = fake_send10
+async def fake_photo10(chat_id, photo, caption, **k): check_html(caption); captions10.append(caption)
+bot.bot.send_photo = fake_photo10
+async def fake_get_chat10(uid): return SimpleNamespace(username=None)
+bot.bot.get_chat = fake_get_chat10
+async def fake_in10(uid): return True
+bot.in_channel = fake_in10
+class Cb10:
+    def __init__(self, data, admin_id):
+        self.data = data
+        self.from_user = SimpleNamespace(id=admin_id, username=None, full_name=BAD)
+        async def edit_caption(caption, **k): check_html(caption); captions10.append(caption)
+        async def edit_reply_markup(**k): pass
+        async def answer(t, **k): check_html(t); answers10.append(t)
+        self.message = SimpleNamespace(edit_caption=edit_caption, edit_reply_markup=edit_reply_markup, answer=answer)
+    async def answer(self, text=None, **k): answers10.append(text)   # oyna: HTML emas
+bot.register_receipt("r10", "UNIQ10")
+asyncio.run(bot.cb_approve(Cb10("approve:r10:970:1", admins[0])))
+assert any("Ali &amp; &lt;Vali&gt;" in c for c in captions10), captions10       # chek ostidagi yozuv
+assert any("Ali &amp; &lt;Vali&gt;" in t for u, t in sent10 if u == admins[1])  # boshqa adminga
+assert not any("Chek tasdiqlandi" in t for u, t in sent10 if u == admins[0])     # bosgan adminga emas
+assert bot.claim_receipt("r10", "rejected", 1, "x")["admin_name"].startswith(BAD)  # bazada asl holida
+asyncio.run(bot.cb_reject(Cb10("reject:r10:970", admins[1])))                   # allaqachon hal qilingan
+assert BAD in answers10[-1] and "tasdiqlandi" in answers10[-1]                   # oynada asl ism
+assert not any("rad etildi" in t for u, t in sent10 if u == 970)                # foydalanuvchiga bormasin
+# takroriy chek ogohlantirishi
+class PhotoMsg:
+    photo = [SimpleNamespace(file_unique_id="UNIQ10", file_id="F10")]
+    document = None
+    from_user = SimpleNamespace(id=971, username="u971")
+    async def answer(self, t, **k): pass
+class St10:
+    async def get_data(self): return {"plan": 1}
+    async def clear(self): pass
+captions10.clear()
+asyncio.run(bot.got_receipt(PhotoMsg(), St10()))
+assert len(captions10) == len(admins) and "Ali &amp; &lt;Vali&gt;" in captions10[0], captions10
+# xato matni
+replies10 = []
+class AdminMsg10:
+    from_user = SimpleNamespace(id=admins[0])
+    async def answer(self, t, **k): check_html(t); replies10.append(t)
+async def link_fail(uid): raise RuntimeError("Forbidden: <bot was blocked>")
+bot.make_invite_link = link_fail
+async def fake_in_false(uid): return False
+bot.in_channel = fake_in_false
+asyncio.run(bot.grant_and_send(972, now8, now8 + timedelta(days=1), replace=True, msg=AdminMsg10()))
+asyncio.run(bot.kb_link_uid(SimpleNamespace(text="972", from_user=AdminMsg10.from_user, answer=AdminMsg10().answer), St10()))
+assert len(replies10) == 2 and all("&lt;bot was blocked&gt;" in t for t in replies10), replies10
+print("10. Admin ismi va xato matnlari OK")
+
+# 11. Fon vazifasi to'xtasa logda ko'rinsin, bekor qilinsa jim tursin
+import logging
+logs11 = []
+class H11(logging.Handler):
+    def emit(self, rec): logs11.append(rec.getMessage())
+bot.log.addHandler(H11())
+async def run11():
+    async def checker_loop(): raise RuntimeError("buzildi")
+    t = asyncio.create_task(checker_loop()); t.add_done_callback(bot._log_task_end)
+    await asyncio.sleep(0)
+    async def backup_loop(): await asyncio.sleep(100)
+    t2 = asyncio.create_task(backup_loop()); t2.add_done_callback(bot._log_task_end)
+    await asyncio.sleep(0); t2.cancel(); await asyncio.sleep(0)
+asyncio.run(run11())
+assert len(logs11) == 1 and "checker_loop" in logs11[0] and "buzildi" in logs11[0], logs11
+print("11. Fon vazifalari OK")
+
+# 12. Broadcast: "kut" (RetryAfter) bo'lsa qayta urinadi, yetmaganlar soni ko'rsatiladi
+from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
+from aiogram.methods import SendMessage
+with bot.db() as c:
+    c.execute("DELETE FROM subs")
+now12 = bot.now_tashkent().replace(microsecond=0)
+for uid in (981, 982, 983):
+    bot.upsert_sub(uid, None, now12, now12 + timedelta(days=5), replace=True)
+bot.upsert_sub(984, None, now12 - timedelta(days=9), now12 - timedelta(days=1), replace=True)  # tugagan
+calls12, replies12 = [], []
+class BcMsg:
+    async def copy_to(self, uid):
+        calls12.append(uid)
+        if uid == 981 and calls12.count(981) == 1:
+            raise TelegramRetryAfter(SendMessage(chat_id=uid, text="x"), "Too Many Requests", retry_after=0)
+        if uid == 982:
+            raise TelegramForbiddenError(SendMessage(chat_id=uid, text="x"), "Forbidden: bot was blocked by the user")
+    async def answer(self, t, **k): check_html(t); replies12.append(t)
+asyncio.run(bot.got_broadcast_text(BcMsg(), St9()))
+assert calls12.count(981) == 2 and 984 not in calls12, calls12
+assert "2 ta" in replies12[0] and "1 tasiga yetmadi" in replies12[0], replies12
+print("12. Broadcast OK")
+
+# 13. Tekshiruv faqat ishi bor yozuvlarni o'qiydi; sanalar bir xil formatda (mikrosoniyasiz)
+with bot.db() as c:
+    c.execute("DELETE FROM subs")
+now13 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(990, None, now13, now13 + timedelta(days=5), replace=True)                       # faol
+bot.upsert_sub(991, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)   # tugagan, xabar yo'q
+bot.upsert_sub(992, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)
+bot._set_flag("expired_msg", 992)                                                               # tugagan, xabar ketgan
+assert sorted(r["user_id"] for r in bot.subs_to_check()) == [990, 991]
+assert bot.count_subs() == 3
+bot.upsert_sub(991, None, now13, now13 + timedelta(days=30))   # tugagan obunani uzaytirish (hozirdan boshlab)
+assert "." not in bot.get_sub(991)["end_at"], bot.get_sub(991)["end_at"]
+print("13. SQL filtr va sana formati OK")
+
+# 14. ID so'raydigan dialoglar: noto'g'ri ID -> qayta so'raydi, to'g'ri -> ish bajariladi
+replies14, kicked14 = [], []
+def id_msg(text):
+    async def answer(t, **k): replies14.append(t)
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=admins[0]), answer=answer)
+async def fake_kick14(uid, msg): kicked14.append(uid)
+orig_kick = bot.kick_user
+bot.kick_user = fake_kick14
+st = St9()
+asyncio.run(bot.kb_kick_uid(id_msg("abc"), st))
+assert not st.cleared and not kicked14 and "ID raqam" in replies14[-1]
+asyncio.run(bot.kb_kick_uid(id_msg(" 993 "), st))
+assert st.cleared and kicked14 == [993]
+bot.kick_user = orig_kick
+class St14(St9):
+    data = None; state = None
+    async def update_data(self, **k): self.data = k
+    async def set_state(self, s): self.state = s
+st = St14()
+asyncio.run(bot.kb_add_uid(id_msg(None), st))       # stiker/rasm
+assert st.data is None and "ID raqam" in replies14[-1]
+asyncio.run(bot.kb_add_uid(id_msg("994"), st))
+assert st.data == {"user_id": 994} and st.state == bot.AddDlg.days
+print("14. ID dialoglari OK")
+
+# 15. Test obuna tugmasi (/addmin olib tashlangan, yagona yo'l): 0 rad, N daqiqa beriladi
+granted15 = []
+async def fake_grant15(uid, start, end, replace, msg): granted15.append((uid, end - start, replace))
+orig_grant = bot.grant_and_send
+bot.grant_and_send = fake_grant15
+class St15(St9):
+    async def get_data(self): return {"user_id": 995}
+st = St15()
+asyncio.run(bot.kb_test_minutes(id_msg("0"), st))
+assert not granted15 and not st.cleared and "Daqiqa" in replies14[-1]
+asyncio.run(bot.kb_test_minutes(id_msg("2"), st))
+assert granted15 == [(995, timedelta(minutes=2), True)] and st.cleared
+bot.grant_and_send = orig_grant
+assert not hasattr(bot, "cmd_addmin")
+print("15. Test obuna OK")
+
+# 16. Link faqat FAOL obunachiga; tekshiruv link yaratishdan OLDIN
+links16, sent16 = [], []
+async def fake_link16(uid): links16.append(uid); return f"https://t.me/+L{uid}"
+bot.make_invite_link = fake_link16
+async def fake_send16(uid, text, **k): check_html(text); sent16.append((uid, text))
+bot.bot.send_message = fake_send16
+now16 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(996, None, now16 - timedelta(days=9), now16 - timedelta(days=1), replace=True)  # tugagan
+bot.upsert_sub(997, None, now16, now16 + timedelta(days=5), replace=True)                       # faol
+def run_link(kind, uid):
+    replies14.clear()
+    if kind == "cmd":
+        asyncio.run(bot.cmd_link(id_msg(f"/link {uid}")))
+    else:
+        asyncio.run(bot.kb_link_uid(id_msg(str(uid)), St9()))
+    return replies14[-1]
+for kind in ("cmd", "kb"):
+    links16.clear(); sent16.clear()
+    for uid in (999999, 996):                        # bazada yo'q, tugagan
+        r = run_link(kind, uid)
+        assert "faol obunachi emas" in r and "Qo'shish" in r, (kind, uid, r)
+    assert not links16 and not sent16, (kind, links16)
+    r = run_link(kind, 997)
+    assert "link yuborildi" in r and links16 == [997] and sent16[0][0] == 997, (kind, r)
+print("16. Link faqat faol obunachiga OK")
+
+# 17. "/" menyusi: hammaga /start, /obuna; har bir adminga qo'shimcha buyruqlar
+menus17 = {}
+async def fake_cmds17(commands, scope=None, **k):
+    chat = getattr(scope, "chat_id", None)
+    if chat == admins[1]:
+        raise TelegramBadRequest(GetChatMember(chat_id=1, user_id=1), "Bad Request: chat not found")
+    menus17[chat] = [c.command for c in commands]
+bot.bot.set_my_commands = fake_cmds17
+logs11.clear()
+asyncio.run(bot.on_startup())                     # 2-admin /start bosmagan: bot yiqilmasin
+assert menus17[None] == ["start", "obuna"], menus17
+assert menus17[admins[0]] == ["start", "obuna", "users", "add", "kick", "link"], menus17
+assert admins[1] not in menus17 and any(str(admins[1]) in l for l in logs11), logs11
+async def fake_cmds17b(commands, scope=None, **k): menus17[getattr(scope, "chat_id", None)] = [c.command for c in commands]
+bot.bot.set_my_commands = fake_cmds17b
+start_msg = SimpleNamespace(from_user=SimpleNamespace(id=admins[1]), answer=id_msg("").answer)
+asyncio.run(bot.cmd_start(start_msg, St9()))      # keyin /start bosdi -> menyu o'rnatiladi
+assert menus17[admins[1]] == menus17[admins[0]]
+print("17. Menyular OK")
+
+# 18. Obunachi klaviaturasi: 📋 Obuna holati, 💳 Tariflar
+out18 = []
+def user_msg(text, uid=998):
+    async def answer(t, reply_markup=None, **k): check_html(t); out18.append((t, reply_markup))
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=uid, username="u998"), answer=answer)
+asyncio.run(bot.cmd_start(user_msg("/start"), St9()))
+kbs = [m for _, m in out18 if isinstance(m, bot.ReplyKeyboardMarkup)]
+assert len(kbs) == 1 and [b.text for b in kbs[0].keyboard[0]] == ["📋 Obuna holati", "💳 Tariflar"], out18
+out18.clear()
+asyncio.run(bot.kb_status(user_msg("📋 Obuna holati")))
+assert "Faol obunangiz yo'q" in out18[0][0] and "💳 Tariflar" in out18[0][0], out18
+now18 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(998, None, now18, now18 + timedelta(days=10), replace=True)
+asyncio.run(bot.kb_status(user_msg("📋 Obuna holati")))
+assert "Faol obuna" in out18[1][0], out18
+st = St9()
+asyncio.run(bot.kb_plans(user_msg("💳 Tariflar"), st))
+assert st.cleared and isinstance(out18[2][1], bot.InlineKeyboardMarkup)
+assert out18[2][1].inline_keyboard[0][0].callback_data == "plan:1"
+# tugmalar holat (state) handlerlaridan OLDIN ro'yxatdan o'tgan: chek kutilayotganda ham ishlaydi
+names = [h.callback.__name__ for h in bot.router.message.handlers]
+assert names.index("kb_status") < names.index("not_photo") and names.index("kb_status") < names.index("got_feedback")
+assert names.index("kb_plans") < names.index("not_photo")
+print("18. Obunachi klaviaturasi OK")
+
+# 19. Chek PDF yoki rasm-fayl ko'rinishida ham qabul qilinadi
+docs19, photos19, replies19 = [], [], []
+async def fake_doc19(chat_id, document, caption, reply_markup=None, **k):
+    check_html(caption); docs19.append((chat_id, document, caption, reply_markup))
+async def fake_photo19(chat_id, photo, caption, **k): photos19.append(chat_id)
+bot.bot.send_document = fake_doc19
+bot.bot.send_photo = fake_photo19
+def doc_msg(mime, name, uid_file):
+    async def answer(t, **k): replies19.append(t)
+    return SimpleNamespace(photo=None, document=SimpleNamespace(mime_type=mime, file_name=name, file_id="D" + uid_file,
+                           file_unique_id=uid_file), from_user=SimpleNamespace(id=1001, username="u1001"), answer=answer)
+class St19(St9):
+    async def get_data(self): return {"plan": 3}
+st = St19()
+asyncio.run(bot.got_receipt(doc_msg("application/pdf", "chek.pdf", "PDF1"), st))
+assert len(docs19) == len(admins) and not photos19 and st.cleared, docs19
+_, file_id, cap, kb = docs19[0]
+assert file_id == "DPDF1" and "Yangi chek" in cap and "3 oy" in cap and "TAKRORLANISH" not in cap
+assert kb.inline_keyboard[0][0].callback_data.startswith("approve:") and kb.inline_keyboard[0][0].callback_data.endswith(":1001:3")
+assert "adminga yuborildi" in replies19[-1]
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg("image/jpeg", "IMG_1.jpg", "IMG1"), st))   # siqilmagan rasm-fayl
+assert len(docs19) == len(admins) and st.cleared
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg(None, "CHEK.PDF", "PDF2"), st))            # mime yo'q, nomidan PDF
+assert len(docs19) == len(admins) and st.cleared
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "chek.docx", "DOCX1"), st))
+assert not docs19 and not st.cleared and "rasm yoki PDF" in replies19[-1]       # rad, jarayon davom etadi
+asyncio.run(bot.got_receipt(doc_msg("application/pdf", "chek.pdf", "PDF1"), St19()))  # takror
+assert "TAKRORLANISH" in docs19[0][2], docs19[0][2]
+names = [h.callback.__name__ for h in bot.router.message.handlers]
+assert names.index("got_receipt") < names.index("not_photo")
+print("19. PDF chek OK")
+print("\nHAMMA TEST O'TDI ✅ (19)")
 

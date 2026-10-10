@@ -2,7 +2,7 @@
 
 > Qoida: har bir AI (qaysi vosita bo'lishidan qat'iy nazar) ishni boshlashdan oldin buni o'qiydi,
 > ish tugagach "O'zgarishlar jurnali" tepasiga yozuv qo'shadi. Batafsil: AGENTS.md.
-> Oxirgi yangilanish: 2026-10-08 (Claude)
+> Oxirgi yangilanish: 2026-10-10 (Claude)
 
 ## Loyiha qisqacha
 Telegram yopiq kanal uchun pullik obuna boti. Foydalanuvchi tarif tanlaydi, karta raqamlariga pul o'tkazadi,
@@ -31,10 +31,16 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - DB jadvallari: `subs` (user_id, username, start_at, end_at, reminded3, reminded1, expired_msg),
   `receipts` (rid, status pending/approved/rejected, admin_id, admin_name, decided_at, photo_uid).
 - Obunachilar ro'yxati (`/users` va tugma) faqat faol (muddati tugamagan) obunachilarni ko'rsatadi.
-- Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/addmin`, `/kick`, `/link` va klaviatura
+- Link (`/link` va tugma) faqat faol obunachiga yuboriladi; boshqalarga kirish "➕ Qo'shish" orqali.
+- Eslatmalar: 3 kun va 1 kun qolganda; tekshiruvda 1 kundan kam qolgan bo'lsa faqat 1 kunlik ketadi.
+- Broadcast hisobotida yetgan va yetmaganlar soni ko'rsatiladi; Telegram RetryAfter bersa qayta uriniladi.
+- Obunachi klaviaturasi: "📋 Obuna holati", "💳 Tariflar" (`user_kb`).
+- "/" menyusi: hammaga `/start`, `/obuna`; adminlarga (o'z chatida) `/users`, `/add`, `/kick`, `/link` ham.
+- Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/kick`, `/link` va klaviatura
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
 - `/add <id> <kun>` uzaytiradi; `/add <id> <sana>` (31-12-2026) tugash sanasini aniq qo'yadi (23:59 Toshkent).
 - Chek tasdiqlashda atomik qulf: `register_receipt` (pending) -> `claim_receipt` (faqat birinchi admin o'tadi).
+- Chek: rasm, PDF yoki rasm-fayl qabul qilinadi.
 - Takroriy chek: `file_unique_id` bo'yicha solishtiriladi, adminga ⚠️ chiqadi. Avtomatik rad etilmaydi.
 - Muddat tugaganda: `in_channel()` True/False/None qaytaradi. None yoki chiqarish xatosida `expired_msg` belgisi
   qo'yilmaydi va keyingi aylanishda qayta uriniladi.
@@ -49,6 +55,10 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - `/import` buyrug'i KERAK EMAS (foydalanuvchi qarori, 2026-10-08). Eski a'zolar "➕ Qo'shish" orqali kiritiladi,
   tugash sanasini yozish bilan.
 - Takroriy chek faqat ogohlantirish, qaror admin qo'lida.
+- Barcha xabarlar HTML (`DefaultBotProperties(parse_mode=HTML)`) bo'lib qoladi (foydalanuvchi qarori, 2026-10-10):
+  karta raqami va ID `<code>` bilan bir bosishda nusxalanadi. QOIDA: foydalanuvchi, Telegram yoki xatodan kelgan
+  har qanday matn (ism, fikr, `{e}`, ...) HTML xabarga faqat `html.escape(...)` bilan qo'yiladi. `cb.answer`
+  (oyna) HTML emas, u yerda escape qilinmaydi. Username (`@...`) xavfsiz (faqat harf, raqam, `_`).
 - Bitta fayl (`bot.py`) saqlanadi, loyiha kichik, bo'lib tashlash shart emas.
 - Eski `test_logic.py` va `test_userkb.py` o'chirildi: ular boshqa (1345 qatorli) versiyaga yozilgan edi va hozirgi
   kodga mos kelmasdi.
@@ -62,7 +72,6 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - Repo public: `.env`, token va haqiqiy karta raqami hech qachon commit qilinmagan (2026-10-08 tekshirildi).
   Tarixda faqat namunaviy raqamlar, admin kontakt username (`ADMIN_CONTACT_USERNAME` namunasi) va test uchun
   ism bor. Yangi commitga sir yozmang.
-- Broadcast: xabar nechta odamga yetmagani (bloklaganlar) alohida ko'rsatilmaydi, faqat yetganlar soni.
 - "🛠 Buyruqlar" yordam matnida Broadcast haqida qisqa yozilgan (matn yoki rasm yuborilishi aytilmagan).
 - Takroriy chek faqat bir xil rasm uchun ishlaydi; qayta saqlangan/kesilgan rasm boshqa deb hisoblanadi.
 - `/start` bosmagan eski a'zolarga eslatma va tugash xabarlari yetmaydi (kanaldan chiqarish baribir ishlaydi).
@@ -78,6 +87,73 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 ```
 
 ## O'zgarishlar jurnali (yangisi tepada)
+
+### 2026-10-10, Claude Code (desktop): `cleanup-v1` shoxi (xatolar + tozalash, birma-bir)
+- Reja (foydalanuvchi bilan kelishilgan): 1) feedback, 2) HTML escape, 3) fon vazifalari, 4) broadcast RetryAfter,
+  5) eslatmalar (1 kundan kam qolsa faqat 🚨), 6) SQL filtrlari, 7) takroriy kodni birlashtirish. Har qadam alohida
+  commit; `main` ga push faqat foydalanuvchi aytganda. Bitta fayl (`bot.py`) saqlanadi.
+- 1-qadam: `got_feedback` fikr matnini `html.escape` qiladi (avval `<`/`&` bo'lsa Telegram rad etib, fikr adminga
+  yetmasdi, foydalanuvchiga esa "yuborildi" deyilardi). Matnsiz xabarda (rasm, stiker) matn so'raydi, holat saqlanadi.
+  Test: test_fixes.py 9-bo'lim.
+- 2-qadam: admin ismi (`_admin_name`, full_name) va xato matnlari (`{e}`) HTML xabarlarga `html.escape` bilan
+  qo'yiladi: chek ostidagi yozuv, boshqa adminlarga xabar, takroriy chek ogohlantirishi, 5 ta "Xato"/"yuborilmadi"
+  xabari. Bazada ism asl holida qoladi (`cb.answer` oynasi HTML emas, u yerda escape qilinmaydi).
+  Test: test_fixes.py 10-bo'lim.
+- 3-qadam: `main()` fon vazifalarini (`checker_loop`, `backup_loop`) ro'yxatda saqlaydi (avval havola yo'q edi,
+  GC o'chirib yuborishi mumkin edi), to'xtasa `_log_task_end` logga xato yozadi, bot to'xtaganda bekor qilinadi.
+  Test: test_fixes.py 11-bo'lim (`_log_task_end`). `main()` ning o'zi haqiqiy token bilan ishga tushirib sinalmagan.
+- 4-qadam: Broadcast `_copy_with_retry`: Telegram RetryAfter bersa aytilgan vaqt kutib qayta urinadi (3 marta).
+  Hisobot: "✅ N ta yetdi" + yetmaganlar bo'lsa "❌ M tasiga yetmadi" (foydalanuvchi qarori: ID ro'yxatisiz).
+  Ochiq masaladan olib tashlandi. Test: test_fixes.py 12-bo'lim.
+- 5-qadam: eslatmalar (foydalanuvchi qarori): tekshiruvda 1 kundan kam qolgan bo'lsa faqat 🚨 1 kunlik yuboriladi,
+  `reminded3` ham 1 qilinadi (avval ⚠️ va 🚨 ketma-ket kelardi: test obuna, 1 kunlik qo'shish, bot o'chiq turganda).
+  Oddiy 3 kun / 1 kun eslatmalari o'zgarmadi. 3 kundan qisqa obunaga darhol ⚠️ kelishi qoldirildi (qaror).
+  Test: test_fixes.py 7-bo'lim yangilandi.
+- 6-qadam (A varianti, foydalanuvchi qarori): `check_subscriptions` endi `subs_to_check()` (`WHERE expired_msg=0`)
+  ni o'qiydi, `main()` da `count_subs()` (`COUNT(*)`). Uzaytirishda `end_at` mikrosoniyasiz yoziladi.
+  Ro'yxat va Broadcast ATAYLAB Python'da filtrlanadi: `end_at` matn, Railway bazasida boshqa formatdagi (masalan
+  eski `+00:00` yoki mikrosoniyali) yozuvlar bo'lishi mumkin, SQL'da sanani solishtirish ularni noto'g'ri saralaydi.
+  SQL sana filtri faqat Railway bazasi formati tekshirilgandan keyin. Test: test_fixes.py 13-bo'lim.
+- 7-qadam (takroriy kod, kichik qismlarda). 7f qarori: Link (tugma va `/link`) faqat FAOL obunachiga.
+  - 7a: `notify_admins(text, except_id=None)` "Yordamchilar" bo'limiga ko'chirildi; `_notify_other_admins` va
+    feedback tsikli shu bilan almashtirildi (endi xato jim yutilmaydi, logga yoziladi). Chek rasmi alohida qoldi.
+  - 7b: 4 ta dialogdagi ID tekshiruvi `_read_uid(msg)` ga birlashtirildi. Test: test_fixes.py 14-bo'lim.
+  - 7c: `cb_approve`/`cb_reject` dagi "allaqachon hal qilingan" bloki `_claim(cb, rid, status)` ga chiqarildi.
+    Test: 10-bo'lim (ikkinchi admin rad etsa foydalanuvchiga xabar bormaydi).
+  - 7d: `/addmin` buyrug'i OLIB TASHLANDI (foydalanuvchi qarori). Test obuna faqat "🧪 Test obuna" tugmasi orqali.
+    bot.py docstring, README, "Joriy holat" yangilandi. Test: 15-bo'lim.
+  - 7e: `_need_admin` -> `is_admin`; `_set_flag` oddiy (async emas) funksiya; `claim_receipt` `db()` dan foydalanadi
+    (oraliq `commit` lar saqlandi); `cards_text` dagi ortiqcha `CARD_NUMBER` zaxirasi olib tashlandi (fayl boshida bor).
+  - 7f: `/link` va "🔗 Link" tugmasi bitta `send_link` ga birlashtirildi: faqat FAOL obunachiga (`is_active`),
+    tekshiruv link yaratishdan OLDIN (avval tugma umuman tekshirmasdi, `/link` esa linkni yaratib, keyin tekshirardi).
+    Yordam matni yangilandi. Test: 16-bo'lim.
+- Matn buyruqlari (`/users`, `/add`, `/kick`, `/link`) QOLADI (foydalanuvchi qarori, tugmalar bilan bir funksiya).
+  "🛠 Buyruqlar" yordam matni o'zgarmaydi (ularni eslatmaydi).
+- Menyu: `on_startup` hammaga faqat `/start`, `/obuna` (`USER_COMMANDS`); har bir adminga `BotCommandScopeChat`
+  bilan `ADMIN_COMMANDS` (+ `/users`, `/add`, `/kick`, `/link` tavsifi bilan). Avval `/users` hammaga ko'rinardi.
+  Admin botga /start bosmagan bo'lsa xato logga yoziladi; admin `/start` bosganda menyu qayta o'rnatiladi.
+  Test: 17-bo'lim.
+- Obunachi klaviaturasi `user_kb()`: "📋 Obuna holati" (`kb_status`, `/obuna` bilan bir xil, holatni buzmaydi) va
+  "💳 Tariflar" (`kb_plans`, tarif tanlash). `/start` (avval `ReplyKeyboardRemove` edi), "To'lov tasdiqlandi" va
+  "Sizga obuna berildi" xabarlari bilan keladi. Handlerlar holat handlerlaridan OLDIN (chek kutilayotganda ham ishlaydi).
+  `status_text` obunasi yo'qqa "💳 Tariflar tugmasini bosing" deydi. Test: 18-bo'lim.
+- Chek PDF yoki fayl ko'rinishidagi rasm sifatida ham qabul qilinadi (`_receipt_file`): mime `application/pdf`,
+  `image/*` yoki nomi `.pdf`. Adminlarga `send_document` bilan, tugmalari bilan boradi. Boshqa fayllar (docx, zip)
+  rad etiladi, to'lov holati saqlanadi. Takroriy chek fayllar uchun ham ishlaydi (file_unique_id). Matnlar
+  "skrinshot yoki PDF" ga yangilandi. Test: 19-bo'lim. aiogram 3.31 da `send_photo/send_document(chat_id, fayl)`.
+- Natija: testlar 8 bo'limdan 19 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
+  2026-10-10 da `main` ga qo'shildi va GitHub'ga push qilindi (Railway avto-deploy). Deploydan keyingi qo'lda
+  tekshiruv (menyu, PDF chek, Test obuna eslatmasi) hali foydalanuvchi tomonidan tasdiqlanmagan.
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
+
+### 2026-10-10, Claude Code (desktop)
+- Git holati: PR #2 ("Trading Journal v0.17" refactor, boshqa loyiha kodi) `main` ga qo'shilgan, keyin foydalanuvchi
+  revert qilgan (ce0e830). Hozirgi kod f3491ff bilan aynan bir xil (`git diff f3491ff HEAD` bo'sh).
+- test_fixes.py 7-bo'lim tuzatildi: admin ID `1` o'rniga `bot.ADMIN_IDS[0]` (test `ADMIN_IDS=111,222` qo'yadi,
+  shuning uchun `kb_help` javob bermay `IndexError` berardi). Bot kodiga tegilmadi.
+- Windows'da testlar `PYTHONIOENCODING=utf-8` bilan ishga tushirilishi kerak (aks holda emoji print xatosi).
+- Fayllar: test_fixes.py, AI_LOG.md
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-09, Claude (claude.ai chat)
 - Adminlarga ogohlantirish qo'shildi (`notify_admins`, `alert_kick_problem`, `resolve_kick_problem`):
