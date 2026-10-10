@@ -582,6 +582,19 @@ async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str, by_name: s
     except Exception:
         pass
 
+async def _claim(cb: CallbackQuery, rid: str, status: str) -> bool:
+    """Chekni shu admin nomiga egallaydi. Boshqa admin allaqachon hal qilgan bo'lsa,
+    ogohlantiradi, chek ostidagi yozuvni yangilaydi va False qaytaradi."""
+    existing = claim_receipt(rid, status, cb.from_user.id, _admin_name(cb.from_user))
+    if existing is None:
+        return True
+    await cb.answer(
+        f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
+        show_alert=True,
+    )
+    await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    return False
+
 @router.callback_query(F.data.startswith("approve:"))
 async def cb_approve(cb: CallbackQuery) -> None:
     if not is_admin(cb.from_user.id):
@@ -590,13 +603,7 @@ async def cb_approve(cb: CallbackQuery) -> None:
     _, rid, uid_s, pid_s = cb.data.split(":")
     uid, pid = int(uid_s), int(pid_s)
     plan = PLANS[pid]
-    existing = claim_receipt(rid, "approved", cb.from_user.id, _admin_name(cb.from_user))
-    if existing is not None:
-        await cb.answer(
-            f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
-            show_alert=True,
-        )
-        await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    if not await _claim(cb, rid, "approved"):
         return
     start = now_tashkent().replace(microsecond=0)
     end = start + timedelta(days=plan["days"])
@@ -631,13 +638,7 @@ async def cb_reject(cb: CallbackQuery) -> None:
         return
     _, rid, uid_s = cb.data.split(":")
     uid = int(uid_s)
-    existing = claim_receipt(rid, "rejected", cb.from_user.id, _admin_name(cb.from_user))
-    if existing is not None:
-        await cb.answer(
-            f"⚠️ Bu chek allaqachon {_decision_word(existing['status']).lower()} – {existing['admin_name'] or 'boshqa admin'}",
-            show_alert=True,
-        )
-        await _finalize_receipt(cb, _decision_emoji(existing['status']), _decision_word(existing['status']), by_name=existing['admin_name'])
+    if not await _claim(cb, rid, "rejected"):
         return
     try:
         await bot.send_message(uid, "❌ To'lov rad etildi. Savol bo'lsa, adminga yozing yoki qaytadan urinib ko'ring.")

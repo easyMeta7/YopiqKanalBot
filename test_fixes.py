@@ -292,7 +292,8 @@ assert any("Ali &amp; &lt;Vali&gt;" in t for u, t in sent10 if u == admins[1])  
 assert not any("Chek tasdiqlandi" in t for u, t in sent10 if u == admins[0])     # bosgan adminga emas
 assert bot.claim_receipt("r10", "rejected", 1, "x")["admin_name"].startswith(BAD)  # bazada asl holida
 asyncio.run(bot.cb_reject(Cb10("reject:r10:970", admins[1])))                   # allaqachon hal qilingan
-assert BAD in answers10[-1]                                                      # oynada asl ism
+assert BAD in answers10[-1] and "tasdiqlandi" in answers10[-1]                   # oynada asl ism
+assert not any("rad etildi" in t for u, t in sent10 if u == 970)                # foydalanuvchiga bormasin
 # takroriy chek ogohlantirishi
 class PhotoMsg:
     photo = [SimpleNamespace(file_unique_id="UNIQ10", file_id="F10")]
