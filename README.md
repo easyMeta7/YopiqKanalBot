@@ -22,11 +22,11 @@ Telegram yopiq kanali uchun obuna boshqaruv boti. Python + aiogram 3 + SQLite.
 | `/users` | admin | Faol obunachilar ro'yxati |
 | `/add <id> <kun>` | admin | Muddatni uzaytirish |
 | `/add <id> <sana>` | admin | Tugash sanasini aniq qo'yish (`31-12-2026`), eski a'zolar uchun |
-| `/addmin <id> <daqiqa>` | admin | Test rejimi (muddatni almashtiradi) |
 | `/kick <id>` | admin | Kanaldan chiqarish |
 | `/link <id>` | admin | Invite linkni qayta yuborish |
 
-Admin klaviaturasida shular tugma sifatida ham bor, qo'shimcha: 📢 Broadcast (barcha faol obunachilarga xabar).
+Admin klaviaturasida shular tugma sifatida ham bor, qo'shimcha: 🧪 Test obuna (N daqiqalik obuna, muddatni
+almashtiradi) va 📢 Broadcast (barcha faol obunachilarga xabar).
 
 ## Mahalliy ishga tushirish
 

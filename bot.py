@@ -16,10 +16,10 @@ Asosiy funksiyalar:
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
   - Muddat tugaganda kanaldan chiqarish (xato bo'lsa keyingi aylanishda qayta uriniladi)
   - Chiqarib bo'lmasa yoki backup xato bersa, adminlarga ogohlantirish (bir muammo uchun bir marta)
-  - Admin: /users, /add, /addmin, /kick, /link + klaviatura tugmalari
+  - Admin: /users, /add, /kick, /link + klaviatura tugmalari
   - /add <id> <kun>   - muddatni uzaytiradi
   - /add <id> <sana>  - tugash sanasini aniq qo'yadi (31-12-2026), eski a'zolar uchun
-  - /addmin <id> <daqiqa> - test rejimi (eski muddatni ALMASHTIRADI)
+  - 🧪 Test obuna tugmasi - N daqiqalik obuna (eski muddatni ALMASHTIRADI)
   - /kick <id>, /link <id>
   - 📢 Broadcast  - barcha faol obunachilarga xabar
   - 📂 Auto-Backup - har 6 soatda baza nusxasi BACKUP_CHANNEL_ID kanaliga
@@ -699,19 +699,6 @@ async def cmd_add(msg: Message) -> None:
         await msg.answer("Foydalanish:\n/add &lt;user_id&gt; &lt;kun&gt;  – muddatni uzaytiradi\n/add &lt;user_id&gt; &lt;sana&gt;  – tugash sanasini aniq qo'yadi (31-12-2026)")
         return
     await add_by_days_or_date(int(parts[1]), parts[2], msg)
-
-@router.message(Command("addmin"))
-async def cmd_addmin(msg: Message) -> None:
-    if not is_admin(msg.from_user.id):
-        return
-    parts = (msg.text or "").split()
-    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
-        await msg.answer("Foydalanish: /addmin <user_id> <daqiqa>")
-        return
-    uid, minutes = int(parts[1]), int(parts[2])
-    start = now_tashkent().replace(microsecond=0)
-    end = start + timedelta(minutes=minutes)
-    await grant_and_send(uid, start, end, replace=True, msg=msg)
 
 @router.message(Command("kick"))
 async def cmd_kick(msg: Message) -> None:

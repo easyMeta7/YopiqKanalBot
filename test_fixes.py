@@ -397,5 +397,21 @@ assert st.data is None and "ID raqam" in replies14[-1]
 asyncio.run(bot.kb_add_uid(id_msg("994"), st))
 assert st.data == {"user_id": 994} and st.state == bot.AddDlg.days
 print("14. ID dialoglari OK")
-print("\nHAMMA TEST O'TDI ✅ (14)")
+
+# 15. Test obuna tugmasi (/addmin olib tashlangan, yagona yo'l): 0 rad, N daqiqa beriladi
+granted15 = []
+async def fake_grant15(uid, start, end, replace, msg): granted15.append((uid, end - start, replace))
+orig_grant = bot.grant_and_send
+bot.grant_and_send = fake_grant15
+class St15(St9):
+    async def get_data(self): return {"user_id": 995}
+st = St15()
+asyncio.run(bot.kb_test_minutes(id_msg("0"), st))
+assert not granted15 and not st.cleared and "Daqiqa" in replies14[-1]
+asyncio.run(bot.kb_test_minutes(id_msg("2"), st))
+assert granted15 == [(995, timedelta(minutes=2), True)] and st.cleared
+bot.grant_and_send = orig_grant
+assert not hasattr(bot, "cmd_addmin")
+print("15. Test obuna OK")
+print("\nHAMMA TEST O'TDI ✅ (15)")
 

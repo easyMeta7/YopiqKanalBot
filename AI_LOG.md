@@ -31,7 +31,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - DB jadvallari: `subs` (user_id, username, start_at, end_at, reminded3, reminded1, expired_msg),
   `receipts` (rid, status pending/approved/rejected, admin_id, admin_name, decided_at, photo_uid).
 - Obunachilar ro'yxati (`/users` va tugma) faqat faol (muddati tugamagan) obunachilarni ko'rsatadi.
-- Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/addmin`, `/kick`, `/link` va klaviatura
+- Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/kick`, `/link` va klaviatura
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
 - `/add <id> <kun>` uzaytiradi; `/add <id> <sana>` (31-12-2026) tugash sanasini aniq qo'yadi (23:59 Toshkent).
 - Chek tasdiqlashda atomik qulf: `register_receipt` (pending) -> `claim_receipt` (faqat birinchi admin o'tadi).
@@ -114,6 +114,8 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   - 7b: 4 ta dialogdagi ID tekshiruvi `_read_uid(msg)` ga birlashtirildi. Test: test_fixes.py 14-bo'lim.
   - 7c: `cb_approve`/`cb_reject` dagi "allaqachon hal qilingan" bloki `_claim(cb, rid, status)` ga chiqarildi.
     Test: 10-bo'lim (ikkinchi admin rad etsa foydalanuvchiga xabar bormaydi).
+  - 7d: `/addmin` buyrug'i OLIB TASHLANDI (foydalanuvchi qarori). Test obuna faqat "🧪 Test obuna" tugmasi orqali.
+    bot.py docstring, README, "Joriy holat" yangilandi. Test: 15-bo'lim.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
