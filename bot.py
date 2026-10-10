@@ -993,19 +993,7 @@ async def check_subscriptions() -> None:
         uid = r["user_id"]
         if end > now:
             left_days = (end - now).total_seconds() / 86400
-            if left_days <= 3 and not r["reminded3"]:
-                try:
-                    await bot.send_message(
-                        uid,
-                        "⚠️ <b>Obuna tugashiga 3 kundan kam qoldi</b>\n"
-                        "\n"
-                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
-                        "\n"
-                        "Uzilishsiz davom etishi uchun muddat tugashidan oldin obunani uzaytiring: /start",
-                    )
-                except Exception:
-                    pass
-                await _set_flag("reminded3", uid)
+            # 1 kundan kam qolgan bo'lsa faqat 1 kunlik eslatma: 3 kunlik ham yuborilgan deb belgilanadi
             if left_days <= 1 and not r["reminded1"]:
                 try:
                     await bot.send_message(
@@ -1019,6 +1007,20 @@ async def check_subscriptions() -> None:
                 except Exception:
                     pass
                 await _set_flag("reminded1", uid)
+                await _set_flag("reminded3", uid)
+            elif left_days <= 3 and not r["reminded3"]:
+                try:
+                    await bot.send_message(
+                        uid,
+                        "⚠️ <b>Obuna tugashiga 3 kundan kam qoldi</b>\n"
+                        "\n"
+                        f"Tugash vaqti: <b>{fmt_dt(r['end_at'])}</b>\n"
+                        "\n"
+                        "Uzilishsiz davom etishi uchun muddat tugashidan oldin obunani uzaytiring: /start",
+                    )
+                except Exception:
+                    pass
+                await _set_flag("reminded3", uid)
             continue
         if r["expired_msg"]:
             continue

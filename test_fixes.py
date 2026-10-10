@@ -157,7 +157,7 @@ for name in ("Qo'shish", "Test obuna", "Chiqarish", "Link", "Broadcast", "Orqaga
 assert h.count("<b>") == h.count("</b>") and h.count("<code>") == h.count("</code>")
 assert len(h) < 4096 and "\n\n" in h
 
-# eslatmalar: 2 daqiqa qolgan obuna -> ikkala eslatma ham, chiroyli formatda
+# eslatmalar: 2 daqiqa qolgan obuna -> faqat 1 kunlik (3 kunlik ham belgilanadi)
 sent7 = []
 async def fake_send7(uid, text, **k): sent7.append((uid, text))
 bot.bot.send_message = fake_send7
@@ -167,12 +167,19 @@ now7 = bot.now_tashkent().replace(microsecond=0)
 bot.upsert_sub(950, "rem", now7, now7 + timedelta(minutes=2), replace=True)
 asyncio.run(bot.check_subscriptions())
 texts = [t for u, t in sent7 if u == 950]
-assert len(texts) == 2, texts
-assert "3 kundan kam" in texts[0] and "1 kundan kam" in texts[1]
-for t in texts:
-    assert "Tugash vaqti: <b>" in t and "/start" in t and "\n\n" in t
+assert len(texts) == 1 and "1 kundan kam" in texts[0], texts
+assert "Tugash vaqti: <b>" in texts[0] and "/start" in texts[0] and "\n\n" in texts[0]
+s950 = bot.get_sub(950)
+assert s950["reminded1"] == 1 and s950["reminded3"] == 1
 asyncio.run(bot.check_subscriptions())   # qayta yuborilmasin
-assert len([1 for u, t in sent7 if u == 950]) == 2
+assert len([1 for u, t in sent7 if u == 950]) == 1
+# oddiy holat: 2 kun qolgan -> faqat 3 kunlik
+bot.upsert_sub(951, "rem2", now7, now7 + timedelta(days=2), replace=True)
+asyncio.run(bot.check_subscriptions())
+texts = [t for u, t in sent7 if u == 951]
+assert len(texts) == 1 and "3 kundan kam" in texts[0], texts
+assert "Tugash vaqti: <b>" in texts[0] and "/start" in texts[0] and "\n\n" in texts[0]
+assert bot.get_sub(951)["reminded1"] == 0
 print("7. Yordam matni va eslatmalar OK")
 
 # 8. Adminga ogohlantirish: chiqarib bo'lmasa va backup xato bersa

@@ -99,6 +99,10 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - 4-qadam: Broadcast `_copy_with_retry`: Telegram RetryAfter bersa aytilgan vaqt kutib qayta urinadi (3 marta).
   Hisobot: "✅ N ta yetdi" + yetmaganlar bo'lsa "❌ M tasiga yetmadi" (foydalanuvchi qarori: ID ro'yxatisiz).
   Ochiq masaladan olib tashlandi. Test: test_fixes.py 12-bo'lim.
+- 5-qadam: eslatmalar (foydalanuvchi qarori): tekshiruvda 1 kundan kam qolgan bo'lsa faqat 🚨 1 kunlik yuboriladi,
+  `reminded3` ham 1 qilinadi (avval ⚠️ va 🚨 ketma-ket kelardi: test obuna, 1 kunlik qo'shish, bot o'chiq turganda).
+  Oddiy 3 kun / 1 kun eslatmalari o'zgarmadi. 3 kundan qisqa obunaga darhol ⚠️ kelishi qoldirildi (qaror).
+  Test: test_fixes.py 7-bo'lim yangilandi.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
