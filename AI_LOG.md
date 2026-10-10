@@ -145,7 +145,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   2026-10-10 da `main` ga qo'shildi va GitHub'ga push qilindi (merge 975279f). Railway deploy SUCCESS (07:38 Toshkent):
   loglarda "Bot ishga tushdi", "Backup yuborildi", menyu ogohlantirishi yo'q, obunachilar soni 2. Railway'da
   `CHECK_INTERVAL_SEC=30` turibdi (test qiymati; ish uchun 600 ga qaytarish kerak). Qo'lda tekshiruv (menyu,
-  PDF chek, Test obuna eslatmasi) hali foydalanuvchi tomonidan tasdiqlanmagan.
+  PDF chek, Test obuna eslatmasi) foydalanuvchi tomonidan tekshirildi: hammasi ishlayapti (2026-10-10).
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
