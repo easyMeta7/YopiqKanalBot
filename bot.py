@@ -158,9 +158,7 @@ def claim_receipt(rid: str, status: str, admin_id: int, admin_name: str) -> sqli
     """Chekni atomik egallaydi: faqat birinchi bosgan admin o'tadi (None qaytadi).
     Keyingilarga mavjud yozuv qaytadi."""
     now = now_tashkent().replace(microsecond=0).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
+    with db() as conn:
         cur = conn.execute(
             "UPDATE receipts SET status=?, admin_id=?, admin_name=?, decided_at=? "
             "WHERE rid=? AND status='pending'",
@@ -178,8 +176,6 @@ def claim_receipt(rid: str, status: str, admin_id: int, admin_name: str) -> sqli
             conn.commit()
             return None
         return row
-    finally:
-        conn.close()
 
 def find_duplicate_receipt(photo_uid: str, exclude_rid: str) -> sqlite3.Row | None:
     """Xuddi shu rasm (file_unique_id) avval kelganmi? Tahrirlanmagan bir xil
@@ -375,8 +371,6 @@ def cards_text() -> str:
     for name, number in CARDS:
         if number:
             lines.append(f"{name}: <code>{number}</code>")
-    if not lines:
-        lines.append(f"Karta: <code>{os.getenv('CARD_NUMBER', '')}</code>")
     lines.append(f"Karta egasi: {CARD_OWNER}")
     return "\n".join(lines)
 
@@ -740,9 +734,6 @@ async def cmd_users(msg: Message) -> None:
 # Klaviatura dialoglari (2-daraja tugmalar)
 # ---------------------------------------------------------------------------
 
-def _need_admin(msg: Message) -> bool:
-    return is_admin(msg.from_user.id)
-
 async def _ask_uid(msg: Message, state: FSMContext, new_state: State, prompt: str) -> None:
     await state.set_state(new_state)
     await msg.answer(prompt, reply_markup=commands_kb())
@@ -757,7 +748,7 @@ async def _read_uid(msg: Message) -> int | None:
 
 @router.message(F.text == "➕ Qo'shish")
 async def kb_add(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, AddDlg.user_id, "👥 Foydalanuvchi ID raqamini yuboring:")
 
@@ -784,7 +775,7 @@ async def kb_add_days(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "🧪 Test obuna")
 async def kb_test(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, TestDlg.user_id, "👥 Foydalanuvchi ID raqamini yuboring:")
 
@@ -813,7 +804,7 @@ async def kb_test_minutes(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "❌ Chiqarish")
 async def kb_kick(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, KickDlg.user_id, "👥 Chiqariladigan foydalanuvchi ID raqamini yuboring:")
 
@@ -827,7 +818,7 @@ async def kb_kick_uid(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "🔗 Link")
 async def kb_link(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await _ask_uid(msg, state, LinkDlg.user_id, "👥 Link yuboriladigan foydalanuvchi ID raqamini yuboring:")
 
@@ -846,7 +837,7 @@ async def kb_link_uid(msg: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "📢 Broadcast")
 async def kb_broadcast(msg: Message, state: FSMContext) -> None:
-    if not _need_admin(msg):
+    if not is_admin(msg.from_user.id):
         return
     await state.set_state(BroadcastDlg.text)
     await msg.answer("📢 Barcha faol obunachilarga yubormoqchi bo'lgan xabaringizni yozing (matn yoki rasm):", reply_markup=commands_kb())
@@ -932,10 +923,9 @@ async def send_subs_list(msg: Message) -> None:
 # Muddatni tekshirish tsikli
 # ---------------------------------------------------------------------------
 
-async def _set_flag(field: str, uid: int) -> None:
+def _set_flag(field: str, uid: int) -> None:
     with db() as conn:
         conn.execute(f"UPDATE subs SET {field}=1 WHERE user_id=?", (uid,))
-        conn.commit()
 
 # ---------------------------------------------------------------------------
 # Adminlarga ogohlantirish (bir xil muammo uchun bir marta)
@@ -999,8 +989,8 @@ async def check_subscriptions() -> None:
                     )
                 except Exception:
                     pass
-                await _set_flag("reminded1", uid)
-                await _set_flag("reminded3", uid)
+                _set_flag("reminded1", uid)
+                _set_flag("reminded3", uid)
             elif left_days <= 3 and not r["reminded3"]:
                 try:
                     await bot.send_message(
@@ -1013,7 +1003,7 @@ async def check_subscriptions() -> None:
                     )
                 except Exception:
                     pass
-                await _set_flag("reminded3", uid)
+                _set_flag("reminded3", uid)
             continue
         if r["expired_msg"]:
             continue
@@ -1039,7 +1029,7 @@ async def check_subscriptions() -> None:
             await bot.send_message(uid, "🔔 Obuna muddatingiz tugadi.\n\nQaytadan obuna bo'lasizmi yoki kanal haqida qandaydir fikringiz bormi?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Qayta obuna bo'lish", callback_data="resub")], [InlineKeyboardButton(text="💭 Fikr bildirish", callback_data="feedback")]]))
         except Exception as e:
             log.error("Tugash xabari yuborilmadi %s: %s", uid, e)
-        await _set_flag("expired_msg", uid)
+        _set_flag("expired_msg", uid)
 
 async def checker_loop() -> None:
     while True:

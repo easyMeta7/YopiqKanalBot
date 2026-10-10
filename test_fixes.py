@@ -366,7 +366,7 @@ now13 = bot.now_tashkent().replace(microsecond=0)
 bot.upsert_sub(990, None, now13, now13 + timedelta(days=5), replace=True)                       # faol
 bot.upsert_sub(991, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)   # tugagan, xabar yo'q
 bot.upsert_sub(992, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)
-asyncio.run(bot._set_flag("expired_msg", 992))                                                   # tugagan, xabar ketgan
+bot._set_flag("expired_msg", 992)                                                               # tugagan, xabar ketgan
 assert sorted(r["user_id"] for r in bot.subs_to_check()) == [990, 991]
 assert bot.count_subs() == 3
 bot.upsert_sub(991, None, now13, now13 + timedelta(days=30))   # tugagan obunani uzaytirish (hozirdan boshlab)

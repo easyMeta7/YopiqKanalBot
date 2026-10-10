@@ -116,6 +116,8 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
     Test: 10-bo'lim (ikkinchi admin rad etsa foydalanuvchiga xabar bormaydi).
   - 7d: `/addmin` buyrug'i OLIB TASHLANDI (foydalanuvchi qarori). Test obuna faqat "🧪 Test obuna" tugmasi orqali.
     bot.py docstring, README, "Joriy holat" yangilandi. Test: 15-bo'lim.
+  - 7e: `_need_admin` -> `is_admin`; `_set_flag` oddiy (async emas) funksiya; `claim_receipt` `db()` dan foydalanadi
+    (oraliq `commit` lar saqlandi); `cards_text` dagi ortiqcha `CARD_NUMBER` zaxirasi olib tashlandi (fayl boshida bor).
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
