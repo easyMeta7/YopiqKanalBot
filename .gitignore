@@ -1,14 +1,16 @@
-# Maxfiy va lokal fayllar - GitHub'ga hech qachon chiqmasin
-.env
-*.bat
-*.db
-*.db-journal
-*.sqlite
 # Python
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
 venv/
-# Muharrir
-.vscode/
-.cursor/
+.venv/
+
+# .env — hech qachon push qilinmaydi (Railway'da env bo'ladi)
+.env
+
+# Baza — Railway Volume'da saqlanadi
+*.db
+*.db-journal
+*.sqlite3
+
+# AI vositalarining ichki papkalari
+.freebuff/
