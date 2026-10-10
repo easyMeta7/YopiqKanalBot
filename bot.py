@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -462,7 +462,7 @@ async def kb_help(msg: Message) -> None:
         "Kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
         "\n"
         "📢 <b>Broadcast</b>\n"
-        "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani yoziladi.\n"
+        "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani va yetmagani yoziladi.\n"
         "\n"
         "🔙 <b>Orqaga</b>\n"
         "Asosiy menyuga qaytaradi. Dialog paytida bossangiz, dialog bekor bo'ladi.",
@@ -855,17 +855,32 @@ async def kb_broadcast(msg: Message, state: FSMContext) -> None:
 async def got_broadcast_text(msg: Message, state: FSMContext) -> None:
     await state.clear()
     subs = all_subs()
-    count = 0
+    ok = failed = 0
     now = now_tashkent()
     for s in subs:
         if datetime.fromisoformat(s['end_at']) > now:
-            try:
-                await msg.copy_to(s['user_id'])
-                count += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-    await msg.answer(f"✅ Xabar {count} ta faol obunachiga yuborildi.")
+            if await _copy_with_retry(msg, s['user_id']):
+                ok += 1
+            else:
+                failed += 1
+            await asyncio.sleep(0.05)
+    text = f"✅ Xabar {ok} ta faol obunachiga yetdi."
+    if failed:
+        text += f"\n❌ {failed} tasiga yetmadi (botni bloklagan yoki o'chirgan)."
+    await msg.answer(text)
+
+async def _copy_with_retry(msg: Message, uid: int, attempts: int = 3) -> bool:
+    """Telegram "kut" (RetryAfter) desa, aytilgan vaqtcha kutib qayta uriniladi."""
+    for _ in range(attempts):
+        try:
+            await msg.copy_to(uid)
+            return True
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+        except Exception as e:
+            log.info("Broadcast %s ga yetmadi: %s", uid, e)
+            return False
+    return False
 
 # ---------------------------------------------------------------------------
 # Admin yordamchi funksiyalari

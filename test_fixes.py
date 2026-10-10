@@ -326,5 +326,28 @@ async def run11():
 asyncio.run(run11())
 assert len(logs11) == 1 and "checker_loop" in logs11[0] and "buzildi" in logs11[0], logs11
 print("11. Fon vazifalari OK")
-print("\nHAMMA TEST O'TDI ✅ (11)")
+
+# 12. Broadcast: "kut" (RetryAfter) bo'lsa qayta urinadi, yetmaganlar soni ko'rsatiladi
+from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
+from aiogram.methods import SendMessage
+with bot.db() as c:
+    c.execute("DELETE FROM subs")
+now12 = bot.now_tashkent().replace(microsecond=0)
+for uid in (981, 982, 983):
+    bot.upsert_sub(uid, None, now12, now12 + timedelta(days=5), replace=True)
+bot.upsert_sub(984, None, now12 - timedelta(days=9), now12 - timedelta(days=1), replace=True)  # tugagan
+calls12, replies12 = [], []
+class BcMsg:
+    async def copy_to(self, uid):
+        calls12.append(uid)
+        if uid == 981 and calls12.count(981) == 1:
+            raise TelegramRetryAfter(SendMessage(chat_id=uid, text="x"), "Too Many Requests", retry_after=0)
+        if uid == 982:
+            raise TelegramForbiddenError(SendMessage(chat_id=uid, text="x"), "Forbidden: bot was blocked by the user")
+    async def answer(self, t, **k): check_html(t); replies12.append(t)
+asyncio.run(bot.got_broadcast_text(BcMsg(), St9()))
+assert calls12.count(981) == 2 and 984 not in calls12, calls12
+assert "2 ta" in replies12[0] and "1 tasiga yetmadi" in replies12[0], replies12
+print("12. Broadcast OK")
+print("\nHAMMA TEST O'TDI ✅ (12)")
 
