@@ -99,6 +99,9 @@ Railway shu `main` dan deploy qilinadi. Ish alohida shoxda qilinadi, foydalanuvc
   (foydalanuvchi qarori: 0 backupni O'CHIRMAYDI; o'chirish faqat `BACKUP_CHANNEL_ID` ni olib tashlash bilan).
   `backup_loop`, backup xatosi xabari ("N soatdan keyin qayta urinadi") va ishga tushish logi shu qiymatni oladi.
   README, .env.example yangilandi. Test: 21-bo'lim.
+- `main` ga qo'shildi va push qilindi (98acdcd), `backup-interval` shoxi o'chirildi. Railway deploy SUCCESS
+  (07:58 Toshkent): log "tekshiruv har 300 soniyada, backup har 8 soatda" (foydalanuvchi `BACKUP_INTERVAL_HOURS=8`
+  qo'ygan), "Backup yuborildi". Karta o'zgaruvchilarini qo'lda tekshirish foydalanuvchida.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop): `cleanup-v1` shoxi (xatolar + tozalash, birma-bir)
