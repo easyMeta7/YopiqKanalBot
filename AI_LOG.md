@@ -9,7 +9,7 @@ Telegram yopiq kanal uchun pullik obuna boti. Foydalanuvchi tarif tanlaydi, kart
 chek skrinshotini yuboradi. Admin tasdiqlaydi, bot bir martalik invite link beradi. Muddat tugashidan oldin
 eslatadi, tugaganda kanaldan chiqaradi. Stack: Python, aiogram 3, SQLite. Deploy: Railway (Volume `/data`).
 GitHub (public): https://github.com/easyMeta7/YopiqKanalBot (2026-10-08 gacha nomi `MusoFX` edi), branch `main`.
-Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `main` ga qo'shilishidan oldin turadi.
+Railway shu `main` dan deploy qilinadi. Ish alohida shoxda qilinadi, foydalanuvchi aytganda `main` ga qo'shiladi.
 
 ## Fayllar
 | Fayl | Vazifasi |
@@ -87,6 +87,15 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 ```
 
 ## O'zgarishlar jurnali (yangisi tepada)
+
+### 2026-10-10, Claude Code (desktop): `backup-interval` shoxi
+- GitHub: `cleanup-v1` va `beta-1.1` shoxlari o'chirildi (ikkalasi to'liq `main` da edi). Endi faqat `main`.
+- Railway'da foydalanuvchi `CHECK_INTERVAL_SEC=300` qo'ydi (5 daqiqa).
+- Karta o'zgaruvchilari (`CARD_*`, `CARD_OWNER`) bot ishga tushganda o'qiladi: Railway Variables o'zgarsa, qayta
+  deploydan keyin botda yangilanadi. Bo'sh qoldirilgan karta to'lov xabarida ko'rinmaydi.
+- 1: `cards_text` karta raqami va `CARD_OWNER` ni `html.escape` qiladi (avval egasi ismida `&`/`<` bo'lsa
+  to'lov xabari umuman yuborilmasdi). Test: 20-bo'lim.
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop): `cleanup-v1` shoxi (xatolar + tozalash, birma-bir)
 - Reja (foydalanuvchi bilan kelishilgan): 1) feedback, 2) HTML escape, 3) fon vazifalari, 4) broadcast RetryAfter,

@@ -370,8 +370,8 @@ def cards_text() -> str:
     lines = []
     for name, number in CARDS:
         if number:
-            lines.append(f"{name}: <code>{number}</code>")
-    lines.append(f"Karta egasi: {CARD_OWNER}")
+            lines.append(f"{name}: <code>{html.escape(number)}</code>")
+    lines.append(f"Karta egasi: {html.escape(CARD_OWNER)}")
     return "\n".join(lines)
 
 def is_active(sub: sqlite3.Row | None) -> bool:

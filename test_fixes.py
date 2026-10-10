@@ -520,5 +520,15 @@ assert "TAKRORLANISH" in docs19[0][2], docs19[0][2]
 names = [h.callback.__name__ for h in bot.router.message.handlers]
 assert names.index("got_receipt") < names.index("not_photo")
 print("19. PDF chek OK")
-print("\nHAMMA TEST O'TDI ✅ (19)")
+
+# 20. Karta egasi va raqamida HTML belgilar bo'lsa ham to'lov xabari buzilmasin
+orig_owner, orig_cards = bot.CARD_OWNER, bot.CARDS
+bot.CARD_OWNER = "Karimov & <Co>"
+bot.CARDS = [("💳 Visa", "8600 <1111>")]
+t20 = bot.cards_text()
+check_html(t20)
+assert "Karimov &amp; &lt;Co&gt;" in t20 and "<code>8600 &lt;1111&gt;</code>" in t20, t20
+bot.CARD_OWNER, bot.CARDS = orig_owner, orig_cards
+print("20. Karta ma'lumotlari escape OK")
+print("\nHAMMA TEST O'TDI ✅ (20)")
 
