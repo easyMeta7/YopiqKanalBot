@@ -288,6 +288,16 @@ async def add_by_days_or_date(uid: int, arg: str, msg: Message) -> bool:
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
+async def notify_admins(text: str, except_id: int | None = None) -> None:
+    """Barcha adminlarga xabar (except_id – o'tkazib yuboriladigan admin, masalan tugmani bosgan)."""
+    for admin_id in ADMIN_IDS:
+        if admin_id == except_id:
+            continue
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception as e:
+            log.warning("Adminga (%s) xabar yuborilmadi: %s", admin_id, e)
+
 async def in_channel(user_id: int) -> bool | None:
     """True/False – aniq javob. None – tekshirib bo'lmadi (tarmoq/API xatosi)."""
     try:
@@ -609,16 +619,10 @@ async def cb_approve(cb: CallbackQuery) -> None:
         await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}")
     await cb.answer("✅ Tasdiqlandi")
     await _finalize_receipt(cb, "✅", "Tasdiqlandi")
-    await _notify_other_admins(cb.from_user.id, f"✅ Chek tasdiqlandi – {html.escape(_admin_name(cb.from_user))}\nFoydalanuvchi: {uid} ({plan['name']})")
-
-async def _notify_other_admins(except_id: int, text: str) -> None:
-    for admin_id in ADMIN_IDS:
-        if admin_id == except_id:
-            continue
-        try:
-            await bot.send_message(admin_id, text)
-        except Exception:
-            pass
+    await notify_admins(
+        f"✅ Chek tasdiqlandi – {html.escape(_admin_name(cb.from_user))}\nFoydalanuvchi: {uid} ({plan['name']})",
+        except_id=cb.from_user.id,
+    )
 
 @router.callback_query(F.data.startswith("reject:"))
 async def cb_reject(cb: CallbackQuery) -> None:
@@ -664,11 +668,7 @@ async def got_feedback(msg: Message, state: FSMContext) -> None:
         await msg.answer("Iltimos, fikringizni matn ko'rinishida yozing.")
         return
     await state.clear()
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{html.escape(msg.text)}")
-        except Exception:
-            pass
+    await notify_admins(f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{html.escape(msg.text)}")
     await msg.answer("Rahmat! Fikringiz adminga yuborildi.")
 
 # ---------------------------------------------------------------------------
@@ -954,13 +954,6 @@ _kick_alerted: set[int] = set()        # chiqarib bo'lmagan va adminga aytilgan 
 _kick_fail_count: dict[int, int] = {}  # a'zolikni tekshirib bo'lmagan ketma-ket urinishlar
 _backup_alerted = False                # backup xatosi haqida adminga aytilganmi
 KICK_UNKNOWN_ALERT_AFTER = 3           # tekshirib bo'lmasa, shuncha urinishdan keyin ogohlantiramiz
-
-async def notify_admins(text: str) -> None:
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, text)
-        except Exception as e:
-            log.warning("Adminga (%s) xabar yuborilmadi: %s", admin_id, e)
 
 def _who(r) -> str:
     uname = f" @{r['username']}" if r["username"] else ""

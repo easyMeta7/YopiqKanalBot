@@ -108,6 +108,9 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   Ro'yxat va Broadcast ATAYLAB Python'da filtrlanadi: `end_at` matn, Railway bazasida boshqa formatdagi (masalan
   eski `+00:00` yoki mikrosoniyali) yozuvlar bo'lishi mumkin, SQL'da sanani solishtirish ularni noto'g'ri saralaydi.
   SQL sana filtri faqat Railway bazasi formati tekshirilgandan keyin. Test: test_fixes.py 13-bo'lim.
+- 7-qadam (takroriy kod, kichik qismlarda). 7f qarori: Link (tugma va `/link`) faqat FAOL obunachiga.
+  - 7a: `notify_admins(text, except_id=None)` "Yordamchilar" bo'limiga ko'chirildi; `_notify_other_admins` va
+    feedback tsikli shu bilan almashtirildi (endi xato jim yutilmaydi, logga yoziladi). Chek rasmi alohida qoldi.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)

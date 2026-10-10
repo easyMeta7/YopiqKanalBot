@@ -289,6 +289,7 @@ bot.register_receipt("r10", "UNIQ10")
 asyncio.run(bot.cb_approve(Cb10("approve:r10:970:1", admins[0])))
 assert any("Ali &amp; &lt;Vali&gt;" in c for c in captions10), captions10       # chek ostidagi yozuv
 assert any("Ali &amp; &lt;Vali&gt;" in t for u, t in sent10 if u == admins[1])  # boshqa adminga
+assert not any("Chek tasdiqlandi" in t for u, t in sent10 if u == admins[0])     # bosgan adminga emas
 assert bot.claim_receipt("r10", "rejected", 1, "x")["admin_name"].startswith(BAD)  # bazada asl holida
 asyncio.run(bot.cb_reject(Cb10("reject:r10:970", admins[1])))                   # allaqachon hal qilingan
 assert BAD in answers10[-1]                                                      # oynada asl ism
