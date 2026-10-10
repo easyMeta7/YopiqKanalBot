@@ -49,6 +49,10 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - `/import` buyrug'i KERAK EMAS (foydalanuvchi qarori, 2026-10-08). Eski a'zolar "➕ Qo'shish" orqali kiritiladi,
   tugash sanasini yozish bilan.
 - Takroriy chek faqat ogohlantirish, qaror admin qo'lida.
+- Barcha xabarlar HTML (`DefaultBotProperties(parse_mode=HTML)`) bo'lib qoladi (foydalanuvchi qarori, 2026-10-10):
+  karta raqami va ID `<code>` bilan bir bosishda nusxalanadi. QOIDA: foydalanuvchi, Telegram yoki xatodan kelgan
+  har qanday matn (ism, fikr, `{e}`, ...) HTML xabarga faqat `html.escape(...)` bilan qo'yiladi. `cb.answer`
+  (oyna) HTML emas, u yerda escape qilinmaydi. Username (`@...`) xavfsiz (faqat harf, raqam, `_`).
 - Bitta fayl (`bot.py`) saqlanadi, loyiha kichik, bo'lib tashlash shart emas.
 - Eski `test_logic.py` va `test_userkb.py` o'chirildi: ular boshqa (1345 qatorli) versiyaga yozilgan edi va hozirgi
   kodga mos kelmasdi.
