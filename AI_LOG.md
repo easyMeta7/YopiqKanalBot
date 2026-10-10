@@ -2,7 +2,7 @@
 
 > Qoida: har bir AI (qaysi vosita bo'lishidan qat'iy nazar) ishni boshlashdan oldin buni o'qiydi,
 > ish tugagach "O'zgarishlar jurnali" tepasiga yozuv qo'shadi. Batafsil: AGENTS.md.
-> Oxirgi yangilanish: 2026-10-08 (Claude)
+> Oxirgi yangilanish: 2026-10-10 (Claude)
 
 ## Loyiha qisqacha
 Telegram yopiq kanal uchun pullik obuna boti. Foydalanuvchi tarif tanlaydi, karta raqamlariga pul o'tkazadi,
@@ -78,6 +78,15 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 ```
 
 ## O'zgarishlar jurnali (yangisi tepada)
+
+### 2026-10-10, Claude Code (desktop)
+- Git holati: PR #2 ("Trading Journal v0.17" refactor, boshqa loyiha kodi) `main` ga qo'shilgan, keyin foydalanuvchi
+  revert qilgan (ce0e830). Hozirgi kod f3491ff bilan aynan bir xil (`git diff f3491ff HEAD` bo'sh).
+- test_fixes.py 7-bo'lim tuzatildi: admin ID `1` o'rniga `bot.ADMIN_IDS[0]` (test `ADMIN_IDS=111,222` qo'yadi,
+  shuning uchun `kb_help` javob bermay `IndexError` berardi). Bot kodiga tegilmadi.
+- Windows'da testlar `PYTHONIOENCODING=utf-8` bilan ishga tushirilishi kerak (aks holda emoji print xatosi).
+- Fayllar: test_fixes.py, AI_LOG.md
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-09, Claude (claude.ai chat)
 - Adminlarga ogohlantirish qo'shildi (`notify_admins`, `alert_kick_problem`, `resolve_kick_problem`):

@@ -147,7 +147,7 @@ print("\nHAMMA TEST O'TDI ✅ (6)")
 import re
 helps = []
 class AdminMsg:
-    from_user = SimpleNamespace(id=1)
+    from_user = SimpleNamespace(id=bot.ADMIN_IDS[0])
     async def answer(self, t, **k): helps.append(t)
 asyncio.run(bot.kb_help(AdminMsg()))
 h = helps[0]
