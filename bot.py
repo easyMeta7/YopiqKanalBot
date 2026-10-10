@@ -1118,10 +1118,22 @@ async def main() -> None:
     if not ADMIN_CONTACT_USERNAME:
         log.warning("ADMIN_CONTACT_USERNAME kiritilmagan – 'Admin bilan bog'lanish' tugmasi ko'rinmaydi.")
     await on_startup()
-    asyncio.create_task(checker_loop())
-    asyncio.create_task(backup_loop())
+    # Havolani saqlaymiz: aks holda Python fon vazifasini o'chirib yuborishi mumkin
+    tasks = [asyncio.create_task(checker_loop()), asyncio.create_task(backup_loop())]
+    for t in tasks:
+        t.add_done_callback(_log_task_end)
     log.info("Bot ishga tushdi (tekshiruv har %s soniyada, backup har 6 soatda)", CHECK_INTERVAL_SEC)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        for t in tasks:
+            t.cancel()
+
+def _log_task_end(task: asyncio.Task) -> None:
+    """Fon tsikli to'xtab qolsa (bo'lmasligi kerak), logda ko'rinsin."""
+    if task.cancelled():
+        return
+    log.error("Fon vazifasi to'xtadi: %s, xato: %r", task.get_coro().__name__, task.exception())
 
 if __name__ == "__main__":
     try:

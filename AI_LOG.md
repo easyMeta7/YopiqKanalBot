@@ -94,6 +94,9 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   qo'yiladi: chek ostidagi yozuv, boshqa adminlarga xabar, takroriy chek ogohlantirishi, 5 ta "Xato"/"yuborilmadi"
   xabari. Bazada ism asl holida qoladi (`cb.answer` oynasi HTML emas, u yerda escape qilinmaydi).
   Test: test_fixes.py 10-bo'lim.
+- 3-qadam: `main()` fon vazifalarini (`checker_loop`, `backup_loop`) ro'yxatda saqlaydi (avval havola yo'q edi,
+  GC o'chirib yuborishi mumkin edi), to'xtasa `_log_task_end` logga xato yozadi, bot to'xtaganda bekor qilinadi.
+  Test: test_fixes.py 11-bo'lim (`_log_task_end`). `main()` ning o'zi haqiqiy token bilan ishga tushirib sinalmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)

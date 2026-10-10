@@ -309,5 +309,22 @@ asyncio.run(bot.grant_and_send(972, now8, now8 + timedelta(days=1), replace=True
 asyncio.run(bot.kb_link_uid(SimpleNamespace(text="972", from_user=AdminMsg10.from_user, answer=AdminMsg10().answer), St10()))
 assert len(replies10) == 2 and all("&lt;bot was blocked&gt;" in t for t in replies10), replies10
 print("10. Admin ismi va xato matnlari OK")
-print("\nHAMMA TEST O'TDI ✅ (10)")
+
+# 11. Fon vazifasi to'xtasa logda ko'rinsin, bekor qilinsa jim tursin
+import logging
+logs11 = []
+class H11(logging.Handler):
+    def emit(self, rec): logs11.append(rec.getMessage())
+bot.log.addHandler(H11())
+async def run11():
+    async def checker_loop(): raise RuntimeError("buzildi")
+    t = asyncio.create_task(checker_loop()); t.add_done_callback(bot._log_task_end)
+    await asyncio.sleep(0)
+    async def backup_loop(): await asyncio.sleep(100)
+    t2 = asyncio.create_task(backup_loop()); t2.add_done_callback(bot._log_task_end)
+    await asyncio.sleep(0); t2.cancel(); await asyncio.sleep(0)
+asyncio.run(run11())
+assert len(logs11) == 1 and "checker_loop" in logs11[0] and "buzildi" in logs11[0], logs11
+print("11. Fon vazifalari OK")
+print("\nHAMMA TEST O'TDI ✅ (11)")
 
