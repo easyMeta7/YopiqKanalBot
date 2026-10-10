@@ -374,9 +374,12 @@ def cards_text() -> str:
     lines.append(f"Karta egasi: {CARD_OWNER}")
     return "\n".join(lines)
 
+def is_active(sub: sqlite3.Row | None) -> bool:
+    return sub is not None and datetime.fromisoformat(sub["end_at"]) > now_tashkent()
+
 def status_text(user_id: int) -> str:
     sub = get_sub(user_id)
-    if not sub or datetime.fromisoformat(sub["end_at"]) <= now_tashkent():
+    if not is_active(sub):
         return "❌ Faol obunangiz yo'q. /start orqali tarif tanlang."
     left = datetime.fromisoformat(sub["end_at"]) - now_tashkent()
     return (
@@ -472,7 +475,7 @@ async def kb_help(msg: Message) -> None:
         "Foydalanuvchini kanaldan chiqaradi va obunasini yopadi. Faqat ID yuborasiz.\n"
         "\n"
         "🔗 <b>Link</b>\n"
-        "Kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
+        "Faol obunachiga kanalga kirish uchun yangi bir martalik link yuboradi (24 soat amal qiladi). Faqat ID yuborasiz.\n"
         "\n"
         "📢 <b>Broadcast</b>\n"
         "Barcha faol obunachilarga xabar yuboradi (matn yoki rasm). Oxirida nechta odamga yetgani va yetmagani yoziladi.\n"
@@ -712,17 +715,7 @@ async def cmd_link(msg: Message) -> None:
     if len(parts) != 2 or not parts[1].isdigit():
         await msg.answer("Foydalanish: /link <user_id>")
         return
-    uid = int(parts[1])
-    try:
-        link = await make_invite_link(uid)
-        s = get_sub(uid)
-        if s:
-            await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
-            await msg.answer(f"✅ {uid} ga link yuborildi.")
-        else:
-            await msg.answer(f"❌ {uid} obunachi emas.")
-    except Exception as e:
-        await msg.answer(f"Xato: {html.escape(str(e))}")
+    await send_link(int(parts[1]), msg)
 
 @router.message(Command("users"))
 async def cmd_users(msg: Message) -> None:
@@ -828,12 +821,7 @@ async def kb_link_uid(msg: Message, state: FSMContext) -> None:
     if uid is None:
         return
     await state.clear()
-    try:
-        link = await make_invite_link(uid)
-        await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
-        await msg.answer(f"✅ {uid} ga link yuborildi.")
-    except Exception as e:
-        await msg.answer(f"Xato: {html.escape(str(e))}")
+    await send_link(uid, msg)
 
 @router.message(F.text == "📢 Broadcast")
 async def kb_broadcast(msg: Message, state: FSMContext) -> None:
@@ -876,6 +864,19 @@ async def _copy_with_retry(msg: Message, uid: int, attempts: int = 3) -> bool:
 # ---------------------------------------------------------------------------
 # Admin yordamchi funksiyalari
 # ---------------------------------------------------------------------------
+
+async def send_link(uid: int, msg: Message) -> None:
+    """Yangi kirish linki – faqat FAOL obunachiga. Muddati tugaganga link berilsa, bot uni
+    qayta chiqarmaydi (tugash xabari allaqachon ketgan), shuning uchun avval tekshiramiz."""
+    if not is_active(get_sub(uid)):
+        await msg.answer(f"❌ {uid} faol obunachi emas. Kirish berish uchun ➕ Qo'shish dan foydalaning.")
+        return
+    try:
+        link = await make_invite_link(uid)
+        await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
+        await msg.answer(f"✅ {uid} ga link yuborildi.")
+    except Exception as e:
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 async def kick_user(uid: int, msg: Message) -> None:
     try:

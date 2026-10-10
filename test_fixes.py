@@ -413,5 +413,31 @@ assert granted15 == [(995, timedelta(minutes=2), True)] and st.cleared
 bot.grant_and_send = orig_grant
 assert not hasattr(bot, "cmd_addmin")
 print("15. Test obuna OK")
-print("\nHAMMA TEST O'TDI ✅ (15)")
+
+# 16. Link faqat FAOL obunachiga; tekshiruv link yaratishdan OLDIN
+links16, sent16 = [], []
+async def fake_link16(uid): links16.append(uid); return f"https://t.me/+L{uid}"
+bot.make_invite_link = fake_link16
+async def fake_send16(uid, text, **k): check_html(text); sent16.append((uid, text))
+bot.bot.send_message = fake_send16
+now16 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(996, None, now16 - timedelta(days=9), now16 - timedelta(days=1), replace=True)  # tugagan
+bot.upsert_sub(997, None, now16, now16 + timedelta(days=5), replace=True)                       # faol
+def run_link(kind, uid):
+    replies14.clear()
+    if kind == "cmd":
+        asyncio.run(bot.cmd_link(id_msg(f"/link {uid}")))
+    else:
+        asyncio.run(bot.kb_link_uid(id_msg(str(uid)), St9()))
+    return replies14[-1]
+for kind in ("cmd", "kb"):
+    links16.clear(); sent16.clear()
+    for uid in (999999, 996):                        # bazada yo'q, tugagan
+        r = run_link(kind, uid)
+        assert "faol obunachi emas" in r and "Qo'shish" in r, (kind, uid, r)
+    assert not links16 and not sent16, (kind, links16)
+    r = run_link(kind, 997)
+    assert "link yuborildi" in r and links16 == [997] and sent16[0][0] == 997, (kind, r)
+print("16. Link faqat faol obunachiga OK")
+print("\nHAMMA TEST O'TDI ✅ (16)")
 

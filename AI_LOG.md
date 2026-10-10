@@ -31,6 +31,9 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - DB jadvallari: `subs` (user_id, username, start_at, end_at, reminded3, reminded1, expired_msg),
   `receipts` (rid, status pending/approved/rejected, admin_id, admin_name, decided_at, photo_uid).
 - Obunachilar ro'yxati (`/users` va tugma) faqat faol (muddati tugamagan) obunachilarni ko'rsatadi.
+- Link (`/link` va tugma) faqat faol obunachiga yuboriladi; boshqalarga kirish "➕ Qo'shish" orqali.
+- Eslatmalar: 3 kun va 1 kun qolganda; tekshiruvda 1 kundan kam qolgan bo'lsa faqat 1 kunlik ketadi.
+- Broadcast hisobotida yetgan va yetmaganlar soni ko'rsatiladi; Telegram RetryAfter bersa qayta uriniladi.
 - Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/kick`, `/link` va klaviatura
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
 - `/add <id> <kun>` uzaytiradi; `/add <id> <sana>` (31-12-2026) tugash sanasini aniq qo'yadi (23:59 Toshkent).
@@ -118,6 +121,11 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
     bot.py docstring, README, "Joriy holat" yangilandi. Test: 15-bo'lim.
   - 7e: `_need_admin` -> `is_admin`; `_set_flag` oddiy (async emas) funksiya; `claim_receipt` `db()` dan foydalanadi
     (oraliq `commit` lar saqlandi); `cards_text` dagi ortiqcha `CARD_NUMBER` zaxirasi olib tashlandi (fayl boshida bor).
+  - 7f: `/link` va "🔗 Link" tugmasi bitta `send_link` ga birlashtirildi: faqat FAOL obunachiga (`is_active`),
+    tekshiruv link yaratishdan OLDIN (avval tugma umuman tekshirmasdi, `/link` esa linkni yaratib, keyin tekshirardi).
+    Yordam matni yangilandi. Test: 16-bo'lim.
+- Natija: testlar 8 bo'limdan 16 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
+  `main` ga hali qo'shilmagan va push qilinmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
