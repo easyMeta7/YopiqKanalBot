@@ -103,6 +103,11 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   `reminded3` ham 1 qilinadi (avval ⚠️ va 🚨 ketma-ket kelardi: test obuna, 1 kunlik qo'shish, bot o'chiq turganda).
   Oddiy 3 kun / 1 kun eslatmalari o'zgarmadi. 3 kundan qisqa obunaga darhol ⚠️ kelishi qoldirildi (qaror).
   Test: test_fixes.py 7-bo'lim yangilandi.
+- 6-qadam (A varianti, foydalanuvchi qarori): `check_subscriptions` endi `subs_to_check()` (`WHERE expired_msg=0`)
+  ni o'qiydi, `main()` da `count_subs()` (`COUNT(*)`). Uzaytirishda `end_at` mikrosoniyasiz yoziladi.
+  Ro'yxat va Broadcast ATAYLAB Python'da filtrlanadi: `end_at` matn, Railway bazasida boshqa formatdagi (masalan
+  eski `+00:00` yoki mikrosoniyali) yozuvlar bo'lishi mumkin, SQL'da sanani solishtirish ularni noto'g'ri saralaydi.
+  SQL sana filtri faqat Railway bazasi formati tekshirilgandan keyin. Test: test_fixes.py 13-bo'lim.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)

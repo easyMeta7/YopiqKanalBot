@@ -213,7 +213,7 @@ def upsert_sub(user_id: int, username: str | None, start_at: datetime, end_at: d
             )
         else:
             old_end = datetime.fromisoformat(row["end_at"])
-            base = max(now_tashkent(), old_end)
+            base = max(now_tashkent().replace(microsecond=0), old_end)
             conn.execute(
                 "UPDATE subs SET username=?, end_at=?, reminded3=0, reminded1=0, expired_msg=0 WHERE user_id=?",
                 (username or row["username"], (base + duration).isoformat(), user_id),
@@ -223,6 +223,15 @@ def upsert_sub(user_id: int, username: str | None, start_at: datetime, end_at: d
 def all_subs() -> list[sqlite3.Row]:
     with db() as conn:
         return conn.execute("SELECT * FROM subs ORDER BY end_at DESC").fetchall()
+
+def subs_to_check() -> list[sqlite3.Row]:
+    """Tekshiruv uchun: tugash xabari hali yuborilmaganlar (faollar va endi tugaganlar)."""
+    with db() as conn:
+        return conn.execute("SELECT * FROM subs WHERE expired_msg = 0").fetchall()
+
+def count_subs() -> int:
+    with db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM subs").fetchone()[0]
 
 # ---------------------------------------------------------------------------
 # Yordamchilar
@@ -988,7 +997,7 @@ async def resolve_kick_problem(r) -> None:
 
 async def check_subscriptions() -> None:
     now = now_tashkent()
-    for r in all_subs():
+    for r in subs_to_check():
         end = datetime.fromisoformat(r["end_at"])
         uid = r["user_id"]
         if end > now:
@@ -1130,8 +1139,7 @@ async def main() -> None:
     if not CHANNEL_ID or not ADMIN_IDS:
         raise SystemExit("CHANNEL_ID va ADMIN_IDS ni .env da kiriting.")
     init_db()
-    n_subs = len(all_subs())
-    log.info("DB: %s – obunachilar soni: %s", os.path.abspath(DB_PATH), n_subs)
+    log.info("DB: %s – obunachilar soni: %s", os.path.abspath(DB_PATH), count_subs())
     if not ADMIN_CONTACT_USERNAME:
         log.warning("ADMIN_CONTACT_USERNAME kiritilmagan – 'Admin bilan bog'lanish' tugmasi ko'rinmaydi.")
     await on_startup()

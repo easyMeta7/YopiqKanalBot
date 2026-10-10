@@ -356,5 +356,19 @@ asyncio.run(bot.got_broadcast_text(BcMsg(), St9()))
 assert calls12.count(981) == 2 and 984 not in calls12, calls12
 assert "2 ta" in replies12[0] and "1 tasiga yetmadi" in replies12[0], replies12
 print("12. Broadcast OK")
-print("\nHAMMA TEST O'TDI ✅ (12)")
+
+# 13. Tekshiruv faqat ishi bor yozuvlarni o'qiydi; sanalar bir xil formatda (mikrosoniyasiz)
+with bot.db() as c:
+    c.execute("DELETE FROM subs")
+now13 = bot.now_tashkent().replace(microsecond=0)
+bot.upsert_sub(990, None, now13, now13 + timedelta(days=5), replace=True)                       # faol
+bot.upsert_sub(991, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)   # tugagan, xabar yo'q
+bot.upsert_sub(992, None, now13 - timedelta(days=9), now13 - timedelta(days=1), replace=True)
+asyncio.run(bot._set_flag("expired_msg", 992))                                                   # tugagan, xabar ketgan
+assert sorted(r["user_id"] for r in bot.subs_to_check()) == [990, 991]
+assert bot.count_subs() == 3
+bot.upsert_sub(991, None, now13, now13 + timedelta(days=30))   # tugagan obunani uzaytirish (hozirdan boshlab)
+assert "." not in bot.get_sub(991)["end_at"], bot.get_sub(991)["end_at"]
+print("13. SQL filtr va sana formati OK")
+print("\nHAMMA TEST O'TDI ✅ (13)")
 
