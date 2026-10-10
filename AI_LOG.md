@@ -142,7 +142,8 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   rad etiladi, to'lov holati saqlanadi. Takroriy chek fayllar uchun ham ishlaydi (file_unique_id). Matnlar
   "skrinshot yoki PDF" ga yangilandi. Test: 19-bo'lim. aiogram 3.31 da `send_photo/send_document(chat_id, fayl)`.
 - Natija: testlar 8 bo'limdan 19 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
-  `main` ga hali qo'shilmagan va push qilinmagan.
+  2026-10-10 da `main` ga qo'shildi va GitHub'ga push qilindi (Railway avto-deploy). Deploydan keyingi qo'lda
+  tekshiruv (menyu, PDF chek, Test obuna eslatmasi) hali foydalanuvchi tomonidan tasdiqlanmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
