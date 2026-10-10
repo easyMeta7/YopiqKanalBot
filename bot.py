@@ -507,7 +507,7 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
             when = f", {fmt_dt(dup['decided_at'])}" if dup["decided_at"] else ""
             dup_info = (
                 f"⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham kelgan – "
-                f"{_decision_word(dup['status']).lower()} ({dup['admin_name'] or 'admin'}{when}).\n\n"
+                f"{_decision_word(dup['status']).lower()} ({html.escape(dup['admin_name'] or 'admin')}{when}).\n\n"
             )
     for admin_id in ADMIN_IDS:
         try:
@@ -555,7 +555,7 @@ def _decision_emoji(status: str) -> str:
 async def _finalize_receipt(cb: CallbackQuery, emoji: str, word: str, by_name: str | None = None) -> None:
     who = by_name or _admin_name(cb.from_user)
     try:
-        await cb.message.edit_caption(caption=f"{emoji} {word} – {who}")
+        await cb.message.edit_caption(caption=f"{emoji} {word} – {html.escape(who)}")
     except Exception:
         pass
     try:
@@ -597,10 +597,10 @@ async def cb_approve(cb: CallbackQuery) -> None:
             link = await make_invite_link(uid)
             await bot.send_message(uid, f"✅ To'lov tasdiqlandi!\n\nKanalga kirish linki (24 soat, 1 martalik):\n{link}\n\nMuddat: {fmt_dt(end_iso)}")
     except Exception as e:
-        await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {e}")
+        await cb.message.answer(f"❌ {uid} ga xabar yuborib bo'lmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}")
     await cb.answer("✅ Tasdiqlandi")
     await _finalize_receipt(cb, "✅", "Tasdiqlandi")
-    await _notify_other_admins(cb.from_user.id, f"✅ Chek tasdiqlandi – {_admin_name(cb.from_user)}\nFoydalanuvchi: {uid} ({plan['name']})")
+    await _notify_other_admins(cb.from_user.id, f"✅ Chek tasdiqlandi – {html.escape(_admin_name(cb.from_user))}\nFoydalanuvchi: {uid} ({plan['name']})")
 
 async def _notify_other_admins(except_id: int, text: str) -> None:
     for admin_id in ADMIN_IDS:
@@ -678,7 +678,7 @@ async def grant_and_send(uid: int, start: datetime, end: datetime, replace: bool
         await bot.send_message(uid, f"✅ Sizga obuna berildi.\nLink (24 soat, 1 martalik): {link}\nMuddat: {fmt_dt(end_iso)}")
         await msg.answer(f"✅ {uid} ga link yuborildi. Muddat: {fmt_dt(end_iso)}")
     except Exception as e:
-        await msg.answer(f"❌ {uid} ga link yuborilmadi (botni /start bosgan bo'lishi kerak): {e}\nMuddat bazaga yozildi: {fmt_dt(end_iso)}")
+        await msg.answer(f"❌ {uid} ga link yuborilmadi (botni /start bosgan bo'lishi kerak): {html.escape(str(e))}\nMuddat bazaga yozildi: {fmt_dt(end_iso)}")
 
 @router.message(Command("add"))
 async def cmd_add(msg: Message) -> None:
@@ -731,7 +731,7 @@ async def cmd_link(msg: Message) -> None:
         else:
             await msg.answer(f"❌ {uid} obunachi emas.")
     except Exception as e:
-        await msg.answer(f"Xato: {e}")
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 @router.message(Command("users"))
 async def cmd_users(msg: Message) -> None:
@@ -842,7 +842,7 @@ async def kb_link_uid(msg: Message, state: FSMContext) -> None:
         await bot.send_message(uid, f"🔗 Invite link (24 soat):\n{link}")
         await msg.answer(f"✅ {uid} ga link yuborildi.")
     except Exception as e:
-        await msg.answer(f"Xato: {e}")
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 @router.message(F.text == "📢 Broadcast")
 async def kb_broadcast(msg: Message, state: FSMContext) -> None:
@@ -882,7 +882,7 @@ async def kick_user(uid: int, msg: Message) -> None:
             conn.commit()
         await msg.answer(f"❌ {uid} kanaldan chiqarildi va muddati yopildi.")
     except Exception as e:
-        await msg.answer(f"Xato: {e}")
+        await msg.answer(f"Xato: {html.escape(str(e))}")
 
 def subs_list_text() -> str:
     """Faqat FAOL obunachilar (muddati tugaganlar ko'rsatilmaydi)."""

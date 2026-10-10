@@ -257,5 +257,57 @@ sent9.clear(); replies9.clear(); st = St9()
 asyncio.run(bot.got_feedback(fb_msg(None), st))   # rasm/stiker: matn yo'q
 assert not sent9 and not st.cleared and "matn" in replies9[0], (sent9, replies9)
 print("9. Fikr bildirish OK")
-print("\nHAMMA TEST O'TDI ✅ (9)")
+
+# 10. Admin ismi va xato matnlari HTML'ni buzmasin
+BAD = "Ali & <Vali>"
+sent10, captions10, answers10 = [], [], []
+async def fake_send10(uid, text, **k): check_html(text); sent10.append((uid, text))
+bot.bot.send_message = fake_send10
+async def fake_photo10(chat_id, photo, caption, **k): check_html(caption); captions10.append(caption)
+bot.bot.send_photo = fake_photo10
+async def fake_get_chat10(uid): return SimpleNamespace(username=None)
+bot.bot.get_chat = fake_get_chat10
+async def fake_in10(uid): return True
+bot.in_channel = fake_in10
+class Cb10:
+    def __init__(self, data, admin_id):
+        self.data = data
+        self.from_user = SimpleNamespace(id=admin_id, username=None, full_name=BAD)
+        async def edit_caption(caption, **k): check_html(caption); captions10.append(caption)
+        async def edit_reply_markup(**k): pass
+        async def answer(t, **k): check_html(t); answers10.append(t)
+        self.message = SimpleNamespace(edit_caption=edit_caption, edit_reply_markup=edit_reply_markup, answer=answer)
+    async def answer(self, text=None, **k): answers10.append(text)   # oyna: HTML emas
+bot.register_receipt("r10", "UNIQ10")
+asyncio.run(bot.cb_approve(Cb10("approve:r10:970:1", admins[0])))
+assert any("Ali &amp; &lt;Vali&gt;" in c for c in captions10), captions10       # chek ostidagi yozuv
+assert any("Ali &amp; &lt;Vali&gt;" in t for u, t in sent10 if u == admins[1])  # boshqa adminga
+assert bot.claim_receipt("r10", "rejected", 1, "x")["admin_name"].startswith(BAD)  # bazada asl holida
+asyncio.run(bot.cb_reject(Cb10("reject:r10:970", admins[1])))                   # allaqachon hal qilingan
+assert BAD in answers10[-1]                                                      # oynada asl ism
+# takroriy chek ogohlantirishi
+class PhotoMsg:
+    photo = [SimpleNamespace(file_unique_id="UNIQ10", file_id="F10")]
+    from_user = SimpleNamespace(id=971, username="u971")
+    async def answer(self, t, **k): pass
+class St10:
+    async def get_data(self): return {"plan": 1}
+    async def clear(self): pass
+captions10.clear()
+asyncio.run(bot.got_receipt(PhotoMsg(), St10()))
+assert len(captions10) == len(admins) and "Ali &amp; &lt;Vali&gt;" in captions10[0], captions10
+# xato matni
+replies10 = []
+class AdminMsg10:
+    from_user = SimpleNamespace(id=admins[0])
+    async def answer(self, t, **k): check_html(t); replies10.append(t)
+async def link_fail(uid): raise RuntimeError("Forbidden: <bot was blocked>")
+bot.make_invite_link = link_fail
+async def fake_in_false(uid): return False
+bot.in_channel = fake_in_false
+asyncio.run(bot.grant_and_send(972, now8, now8 + timedelta(days=1), replace=True, msg=AdminMsg10()))
+asyncio.run(bot.kb_link_uid(SimpleNamespace(text="972", from_user=AdminMsg10.from_user, answer=AdminMsg10().answer), St10()))
+assert len(replies10) == 2 and all("&lt;bot was blocked&gt;" in t for t in replies10), replies10
+print("10. Admin ismi va xato matnlari OK")
+print("\nHAMMA TEST O'TDI ✅ (10)")
 

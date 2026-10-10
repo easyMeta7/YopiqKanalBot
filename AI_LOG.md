@@ -86,6 +86,10 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - 1-qadam: `got_feedback` fikr matnini `html.escape` qiladi (avval `<`/`&` bo'lsa Telegram rad etib, fikr adminga
   yetmasdi, foydalanuvchiga esa "yuborildi" deyilardi). Matnsiz xabarda (rasm, stiker) matn so'raydi, holat saqlanadi.
   Test: test_fixes.py 9-bo'lim.
+- 2-qadam: admin ismi (`_admin_name`, full_name) va xato matnlari (`{e}`) HTML xabarlarga `html.escape` bilan
+  qo'yiladi: chek ostidagi yozuv, boshqa adminlarga xabar, takroriy chek ogohlantirishi, 5 ta "Xato"/"yuborilmadi"
+  xabari. Bazada ism asl holida qoladi (`cb.answer` oynasi HTML emas, u yerda escape qilinmaydi).
+  Test: test_fixes.py 10-bo'lim.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
