@@ -40,6 +40,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
 - `/add <id> <kun>` uzaytiradi; `/add <id> <sana>` (31-12-2026) tugash sanasini aniq qo'yadi (23:59 Toshkent).
 - Chek tasdiqlashda atomik qulf: `register_receipt` (pending) -> `claim_receipt` (faqat birinchi admin o'tadi).
+- Chek: rasm, PDF yoki rasm-fayl qabul qilinadi.
 - Takroriy chek: `file_unique_id` bo'yicha solishtiriladi, adminga ⚠️ chiqadi. Avtomatik rad etilmaydi.
 - Muddat tugaganda: `in_channel()` True/False/None qaytaradi. None yoki chiqarish xatosida `expired_msg` belgisi
   qo'yilmaydi va keyingi aylanishda qayta uriniladi.
@@ -136,7 +137,11 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   "💳 Tariflar" (`kb_plans`, tarif tanlash). `/start` (avval `ReplyKeyboardRemove` edi), "To'lov tasdiqlandi" va
   "Sizga obuna berildi" xabarlari bilan keladi. Handlerlar holat handlerlaridan OLDIN (chek kutilayotganda ham ishlaydi).
   `status_text` obunasi yo'qqa "💳 Tariflar tugmasini bosing" deydi. Test: 18-bo'lim.
-- Natija: testlar 8 bo'limdan 16 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
+- Chek PDF yoki fayl ko'rinishidagi rasm sifatida ham qabul qilinadi (`_receipt_file`): mime `application/pdf`,
+  `image/*` yoki nomi `.pdf`. Adminlarga `send_document` bilan, tugmalari bilan boradi. Boshqa fayllar (docx, zip)
+  rad etiladi, to'lov holati saqlanadi. Takroriy chek fayllar uchun ham ishlaydi (file_unique_id). Matnlar
+  "skrinshot yoki PDF" ga yangilandi. Test: 19-bo'lim. aiogram 3.31 da `send_photo/send_document(chat_id, fayl)`.
+- Natija: testlar 8 bo'limdan 19 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
   `main` ga hali qo'shilmagan va push qilinmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 

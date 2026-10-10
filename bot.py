@@ -11,7 +11,7 @@ Python + aiogram 3 + SQLite. Railway'ga deploy qilinadi.
   4. Token, karta raqami va boshqa sirlarni logga yozmang.
 
 Asosiy funksiyalar:
-  - To'lov: chek skrinshoti -> admin tasdiqlashi -> bir martalik invite link
+  - To'lov: chek (rasm yoki PDF) -> admin tasdiqlashi -> bir martalik invite link
   - Takroriy chek ogohlantirishi (bir xil rasm qayta kelsa adminga ⚠️)
   - Muddat tugashidan 3 kun va 1 kun oldin eslatma
   - Muddat tugaganda kanaldan chiqarish (xato bo'lsa keyingi aylanishda qayta uriniladi)
@@ -523,35 +523,54 @@ async def cb_plan(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.message.answer(
         f"💳 <b>{PLANS[pid]['name']}</b> – {price} so'm\n\n"
         f"{cards_text()}\n\n"
-        f"To'lovdan keyin chek skrinshotini shu yerga yuboring."
+        f"To'lovdan keyin chekni shu yerga yuboring (skrinshot yoki PDF)."
     )
     await cb.answer()
 
-@router.message(Pay.waiting_photo, F.photo)
+def _receipt_file(msg: Message) -> tuple[str, str, str] | None:
+    """Chek fayli: (turi, file_id, file_unique_id). Rasm, yoki fayl ko'rinishidagi PDF/rasm.
+    Boshqa narsa bo'lsa None."""
+    if msg.photo:
+        p = msg.photo[-1]
+        return "photo", p.file_id, p.file_unique_id or ""
+    d = msg.document
+    if d is not None:
+        mime = (d.mime_type or "").lower()
+        name = (d.file_name or "").lower()
+        if mime == "application/pdf" or mime.startswith("image/") or name.endswith(".pdf"):
+            return "document", d.file_id, d.file_unique_id or ""
+    return None
+
+@router.message(Pay.waiting_photo, F.photo | F.document)
 async def got_receipt(msg: Message, state: FSMContext) -> None:
+    receipt = _receipt_file(msg)
+    if receipt is None:
+        await msg.answer("Chekni rasm yoki PDF ko'rinishida yuboring.")
+        return
+    kind, file_id, file_uid = receipt
     data = await state.get_data()
     pid = data.get("plan", 1)
     await state.clear()
     price = f"{PLANS[pid]['price']:,}".replace(",", " ")
     rid = uuid.uuid4().hex[:16]
-    photo_uid = msg.photo[-1].file_unique_id or ""
-    register_receipt(rid, photo_uid)
-    dup = find_duplicate_receipt(photo_uid, exclude_rid=rid)
+    register_receipt(rid, file_uid)
+    dup = find_duplicate_receipt(file_uid, exclude_rid=rid)
     dup_info = ""
     if dup is not None:
         if dup["status"] == "pending":
-            dup_info = "⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham yuborilgan, hali hal qilinmagan.\n\n"
+            dup_info = "⚠️ <b>TAKRORLANISH!</b> Bu chek avval ham yuborilgan, hali hal qilinmagan.\n\n"
         else:
             when = f", {fmt_dt(dup['decided_at'])}" if dup["decided_at"] else ""
             dup_info = (
-                f"⚠️ <b>TAKRORLANISH!</b> Bu surat avval ham kelgan – "
+                f"⚠️ <b>TAKRORLANISH!</b> Bu chek avval ham kelgan – "
                 f"{_decision_word(dup['status']).lower()} ({html.escape(dup['admin_name'] or 'admin')}{when}).\n\n"
             )
+    send = bot.send_photo if kind == "photo" else bot.send_document
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_photo(
-                chat_id=admin_id,
-                photo=msg.photo[-1].file_id,
+            await send(
+                admin_id,
+                file_id,
                 caption=(
                     dup_info
                     + f"🧾 Yangi chek!\n"
@@ -573,7 +592,7 @@ async def got_receipt(msg: Message, state: FSMContext) -> None:
 
 @router.message(Pay.waiting_photo)
 async def not_photo(msg: Message) -> None:
-    await msg.answer("Iltimos, chek skrinshotini (rasm) yuboring.")
+    await msg.answer("Iltimos, chekni rasm yoki PDF ko'rinishida yuboring.")
 
 # ---------------------------------------------------------------------------
 # Tasdiqlash / rad etish

@@ -297,6 +297,7 @@ assert not any("rad etildi" in t for u, t in sent10 if u == 970)                
 # takroriy chek ogohlantirishi
 class PhotoMsg:
     photo = [SimpleNamespace(file_unique_id="UNIQ10", file_id="F10")]
+    document = None
     from_user = SimpleNamespace(id=971, username="u971")
     async def answer(self, t, **k): pass
 class St10:
@@ -484,5 +485,40 @@ names = [h.callback.__name__ for h in bot.router.message.handlers]
 assert names.index("kb_status") < names.index("not_photo") and names.index("kb_status") < names.index("got_feedback")
 assert names.index("kb_plans") < names.index("not_photo")
 print("18. Obunachi klaviaturasi OK")
-print("\nHAMMA TEST O'TDI ✅ (18)")
+
+# 19. Chek PDF yoki rasm-fayl ko'rinishida ham qabul qilinadi
+docs19, photos19, replies19 = [], [], []
+async def fake_doc19(chat_id, document, caption, reply_markup=None, **k):
+    check_html(caption); docs19.append((chat_id, document, caption, reply_markup))
+async def fake_photo19(chat_id, photo, caption, **k): photos19.append(chat_id)
+bot.bot.send_document = fake_doc19
+bot.bot.send_photo = fake_photo19
+def doc_msg(mime, name, uid_file):
+    async def answer(t, **k): replies19.append(t)
+    return SimpleNamespace(photo=None, document=SimpleNamespace(mime_type=mime, file_name=name, file_id="D" + uid_file,
+                           file_unique_id=uid_file), from_user=SimpleNamespace(id=1001, username="u1001"), answer=answer)
+class St19(St9):
+    async def get_data(self): return {"plan": 3}
+st = St19()
+asyncio.run(bot.got_receipt(doc_msg("application/pdf", "chek.pdf", "PDF1"), st))
+assert len(docs19) == len(admins) and not photos19 and st.cleared, docs19
+_, file_id, cap, kb = docs19[0]
+assert file_id == "DPDF1" and "Yangi chek" in cap and "3 oy" in cap and "TAKRORLANISH" not in cap
+assert kb.inline_keyboard[0][0].callback_data.startswith("approve:") and kb.inline_keyboard[0][0].callback_data.endswith(":1001:3")
+assert "adminga yuborildi" in replies19[-1]
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg("image/jpeg", "IMG_1.jpg", "IMG1"), st))   # siqilmagan rasm-fayl
+assert len(docs19) == len(admins) and st.cleared
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg(None, "CHEK.PDF", "PDF2"), st))            # mime yo'q, nomidan PDF
+assert len(docs19) == len(admins) and st.cleared
+docs19.clear(); st = St19()
+asyncio.run(bot.got_receipt(doc_msg("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "chek.docx", "DOCX1"), st))
+assert not docs19 and not st.cleared and "rasm yoki PDF" in replies19[-1]       # rad, jarayon davom etadi
+asyncio.run(bot.got_receipt(doc_msg("application/pdf", "chek.pdf", "PDF1"), St19()))  # takror
+assert "TAKRORLANISH" in docs19[0][2], docs19[0][2]
+names = [h.callback.__name__ for h in bot.router.message.handlers]
+assert names.index("got_receipt") < names.index("not_photo")
+print("19. PDF chek OK")
+print("\nHAMMA TEST O'TDI ✅ (19)")
 
