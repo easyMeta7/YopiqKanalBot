@@ -759,6 +759,14 @@ async def _ask_uid(msg: Message, state: FSMContext, new_state: State, prompt: st
     await state.set_state(new_state)
     await msg.answer(prompt, reply_markup=commands_kb())
 
+async def _read_uid(msg: Message) -> int | None:
+    """Dialogda yuborilgan ID ni o'qiydi. Raqam bo'lmasa, qayta so'raydi va None qaytaradi."""
+    text = (msg.text or "").strip()
+    if not text.isdigit():
+        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+        return None
+    return int(text)
+
 @router.message(F.text == "➕ Qo'shish")
 async def kb_add(msg: Message, state: FSMContext) -> None:
     if not _need_admin(msg):
@@ -767,11 +775,10 @@ async def kb_add(msg: Message, state: FSMContext) -> None:
 
 @router.message(AddDlg.user_id)
 async def kb_add_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    await state.update_data(user_id=int(text))
+    await state.update_data(user_id=uid)
     await state.set_state(AddDlg.days)
     await msg.answer(
         "📅 Necha kun qo'shilsin yoki obuna qachon tugasin?\n\n"
@@ -795,11 +802,10 @@ async def kb_test(msg: Message, state: FSMContext) -> None:
 
 @router.message(TestDlg.user_id)
 async def kb_test_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    await state.update_data(user_id=int(text))
+    await state.update_data(user_id=uid)
     await state.set_state(TestDlg.minutes)
     await msg.answer("⏱ Necha daqiqa? (masalan: 2)\nEski muddat almashtiriladi, uzaytirilmaydi.")
 
@@ -825,12 +831,11 @@ async def kb_kick(msg: Message, state: FSMContext) -> None:
 
 @router.message(KickDlg.user_id)
 async def kb_kick_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
     await state.clear()
-    await kick_user(int(text), msg)
+    await kick_user(uid, msg)
 
 @router.message(F.text == "🔗 Link")
 async def kb_link(msg: Message, state: FSMContext) -> None:
@@ -840,11 +845,9 @@ async def kb_link(msg: Message, state: FSMContext) -> None:
 
 @router.message(LinkDlg.user_id)
 async def kb_link_uid(msg: Message, state: FSMContext) -> None:
-    text = (msg.text or "").strip()
-    if not text.isdigit():
-        await msg.answer("ID raqam bo'lishi kerak. Masalan: 123456789")
+    uid = await _read_uid(msg)
+    if uid is None:
         return
-    uid = int(text)
     await state.clear()
     try:
         link = await make_invite_link(uid)

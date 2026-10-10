@@ -371,5 +371,30 @@ assert bot.count_subs() == 3
 bot.upsert_sub(991, None, now13, now13 + timedelta(days=30))   # tugagan obunani uzaytirish (hozirdan boshlab)
 assert "." not in bot.get_sub(991)["end_at"], bot.get_sub(991)["end_at"]
 print("13. SQL filtr va sana formati OK")
-print("\nHAMMA TEST O'TDI ✅ (13)")
+
+# 14. ID so'raydigan dialoglar: noto'g'ri ID -> qayta so'raydi, to'g'ri -> ish bajariladi
+replies14, kicked14 = [], []
+def id_msg(text):
+    async def answer(t, **k): replies14.append(t)
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=admins[0]), answer=answer)
+async def fake_kick14(uid, msg): kicked14.append(uid)
+orig_kick = bot.kick_user
+bot.kick_user = fake_kick14
+st = St9()
+asyncio.run(bot.kb_kick_uid(id_msg("abc"), st))
+assert not st.cleared and not kicked14 and "ID raqam" in replies14[-1]
+asyncio.run(bot.kb_kick_uid(id_msg(" 993 "), st))
+assert st.cleared and kicked14 == [993]
+bot.kick_user = orig_kick
+class St14(St9):
+    data = None; state = None
+    async def update_data(self, **k): self.data = k
+    async def set_state(self, s): self.state = s
+st = St14()
+asyncio.run(bot.kb_add_uid(id_msg(None), st))       # stiker/rasm
+assert st.data is None and "ID raqam" in replies14[-1]
+asyncio.run(bot.kb_add_uid(id_msg("994"), st))
+assert st.data == {"user_id": 994} and st.state == bot.AddDlg.days
+print("14. ID dialoglari OK")
+print("\nHAMMA TEST O'TDI ✅ (14)")
 

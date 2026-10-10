@@ -111,6 +111,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - 7-qadam (takroriy kod, kichik qismlarda). 7f qarori: Link (tugma va `/link`) faqat FAOL obunachiga.
   - 7a: `notify_admins(text, except_id=None)` "Yordamchilar" bo'limiga ko'chirildi; `_notify_other_admins` va
     feedback tsikli shu bilan almashtirildi (endi xato jim yutilmaydi, logga yoziladi). Chek rasmi alohida qoldi.
+  - 7b: 4 ta dialogdagi ID tekshiruvi `_read_uid(msg)` ga birlashtirildi. Test: test_fixes.py 14-bo'lim.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
 
 ### 2026-10-10, Claude Code (desktop)
