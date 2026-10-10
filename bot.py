@@ -45,6 +45,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     FSInputFile,
@@ -418,6 +419,10 @@ def commands_kb() -> ReplyKeyboardMarkup:
 async def cmd_start(msg: Message, state: FSMContext) -> None:
     await state.clear()
     if is_admin(msg.from_user.id):
+        try:  # bot ishga tushganda bu admin /start bosmagan bo'lsa, menyu shu yerda o'rnatiladi
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=msg.from_user.id))
+        except Exception as e:
+            log.warning("Admin %s uchun menyu o'rnatilmadi: %s", msg.from_user.id, e)
         await msg.answer(
             "👋 Assalomu alaykum, admin!\n\n"
             "Pastdagi tugmalar orqali obunachilarni boshqaring.",
@@ -1099,14 +1104,25 @@ async def backup_loop() -> None:
 # Ishga tushirish
 # ---------------------------------------------------------------------------
 
+USER_COMMANDS = [
+    BotCommand(command="start", description="Boshlash / tarif tanlash"),
+    BotCommand(command="obuna", description="Obuna holati"),
+]
+ADMIN_COMMANDS = USER_COMMANDS + [
+    BotCommand(command="users", description="Faol obunachilar ro'yxati"),
+    BotCommand(command="add", description="Obuna qo'shish: /add ID kun yoki sana"),
+    BotCommand(command="kick", description="Kanaldan chiqarish: /kick ID"),
+    BotCommand(command="link", description="Yangi kirish linki: /link ID"),
+]
+
 async def on_startup() -> None:
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Boshlash / tarif tanlash"),
-            BotCommand(command="obuna", description="Obuna holati"),
-            BotCommand(command="users", description="Obunachilar ro'yxati (admin)"),
-        ]
-    )
+    """"/" menyusi: hammaga oddiy buyruqlar, har bir adminga alohida to'liq ro'yxat."""
+    await bot.set_my_commands(USER_COMMANDS)
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception as e:  # admin botga hali /start bosmagan bo'lsa
+            log.warning("Admin %s uchun menyu o'rnatilmadi: %s", admin_id, e)
 
 async def main() -> None:
     if not BOT_TOKEN:

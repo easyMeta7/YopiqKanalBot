@@ -34,6 +34,7 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 - Link (`/link` va tugma) faqat faol obunachiga yuboriladi; boshqalarga kirish "➕ Qo'shish" orqali.
 - Eslatmalar: 3 kun va 1 kun qolganda; tekshiruvda 1 kundan kam qolgan bo'lsa faqat 1 kunlik ketadi.
 - Broadcast hisobotida yetgan va yetmaganlar soni ko'rsatiladi; Telegram RetryAfter bersa qayta uriniladi.
+- "/" menyusi: hammaga `/start`, `/obuna`; adminlarga (o'z chatida) `/users`, `/add`, `/kick`, `/link` ham.
 - Foydalanuvchi buyruqlari: `/start`, `/obuna`. Admin: `/users`, `/add`, `/kick`, `/link` va klaviatura
   tugmalari (Obunachilar ro'yxati, Buyruqlar > Qo'shish, Test obuna, Chiqarish, Link, Broadcast, Orqaga).
 - `/add <id> <kun>` uzaytiradi; `/add <id> <sana>` (31-12-2026) tugash sanasini aniq qo'yadi (23:59 Toshkent).
@@ -124,6 +125,12 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
   - 7f: `/link` va "🔗 Link" tugmasi bitta `send_link` ga birlashtirildi: faqat FAOL obunachiga (`is_active`),
     tekshiruv link yaratishdan OLDIN (avval tugma umuman tekshirmasdi, `/link` esa linkni yaratib, keyin tekshirardi).
     Yordam matni yangilandi. Test: 16-bo'lim.
+- Matn buyruqlari (`/users`, `/add`, `/kick`, `/link`) QOLADI (foydalanuvchi qarori, tugmalar bilan bir funksiya).
+  "🛠 Buyruqlar" yordam matni o'zgarmaydi (ularni eslatmaydi).
+- Menyu: `on_startup` hammaga faqat `/start`, `/obuna` (`USER_COMMANDS`); har bir adminga `BotCommandScopeChat`
+  bilan `ADMIN_COMMANDS` (+ `/users`, `/add`, `/kick`, `/link` tavsifi bilan). Avval `/users` hammaga ko'rinardi.
+  Admin botga /start bosmagan bo'lsa xato logga yoziladi; admin `/start` bosganda menyu qayta o'rnatiladi.
+  Test: 17-bo'lim.
 - Natija: testlar 8 bo'limdan 16 taga. `bot.py` ~1140 qator (takrorlar ketdi, yangi himoyalar qo'shildi).
   `main` ga hali qo'shilmagan va push qilinmagan.
 - Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.

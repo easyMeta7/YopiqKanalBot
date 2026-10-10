@@ -439,5 +439,25 @@ for kind in ("cmd", "kb"):
     r = run_link(kind, 997)
     assert "link yuborildi" in r and links16 == [997] and sent16[0][0] == 997, (kind, r)
 print("16. Link faqat faol obunachiga OK")
-print("\nHAMMA TEST O'TDI ✅ (16)")
+
+# 17. "/" menyusi: hammaga /start, /obuna; har bir adminga qo'shimcha buyruqlar
+menus17 = {}
+async def fake_cmds17(commands, scope=None, **k):
+    chat = getattr(scope, "chat_id", None)
+    if chat == admins[1]:
+        raise TelegramBadRequest(GetChatMember(chat_id=1, user_id=1), "Bad Request: chat not found")
+    menus17[chat] = [c.command for c in commands]
+bot.bot.set_my_commands = fake_cmds17
+logs11.clear()
+asyncio.run(bot.on_startup())                     # 2-admin /start bosmagan: bot yiqilmasin
+assert menus17[None] == ["start", "obuna"], menus17
+assert menus17[admins[0]] == ["start", "obuna", "users", "add", "kick", "link"], menus17
+assert admins[1] not in menus17 and any(str(admins[1]) in l for l in logs11), logs11
+async def fake_cmds17b(commands, scope=None, **k): menus17[getattr(scope, "chat_id", None)] = [c.command for c in commands]
+bot.bot.set_my_commands = fake_cmds17b
+start_msg = SimpleNamespace(from_user=SimpleNamespace(id=admins[1]), answer=id_msg("").answer)
+asyncio.run(bot.cmd_start(start_msg, St9()))      # keyin /start bosdi -> menyu o'rnatiladi
+assert menus17[admins[1]] == menus17[admins[0]]
+print("17. Menyular OK")
+print("\nHAMMA TEST O'TDI ✅ (17)")
 
