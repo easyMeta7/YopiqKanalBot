@@ -227,5 +227,35 @@ bot.bot.send_document = doc_ok
 asyncio.run(bot.run_backup_once())
 assert len([1 for u, t in msgs8 if "Backup yana ishlayapti" in t]) == len(admins)
 print("8. Adminga ogohlantirishlar OK")
-print("\nHAMMA TEST O'TDI ✅ (8)")
+
+# 9. Fikr bildirish: HTML belgilar buzmasin, matn bo'lmasa so'rasin
+from html.parser import HTMLParser
+class HtmlCheck(HTMLParser):
+    """Telegram kabi: faqat ruxsat etilgan teglar va to'g'ri yopilgan bo'lishi kerak."""
+    def __init__(self): super().__init__(); self.stack = []
+    def handle_starttag(self, tag, a):
+        assert tag in ("b", "i", "u", "s", "code", "pre", "a"), f"noma'lum teg <{tag}>"
+        self.stack.append(tag)
+    def handle_endtag(self, tag): assert self.stack and self.stack.pop() == tag, f"</{tag}>"
+def check_html(text):
+    p = HtmlCheck(); p.feed(text); p.close(); assert not p.stack, p.stack
+sent9, replies9 = [], []
+async def fake_send9(uid, text, **k):
+    check_html(text); sent9.append((uid, text))
+bot.bot.send_message = fake_send9
+class St9:
+    cleared = False
+    async def clear(self): self.cleared = True
+def fb_msg(text):
+    async def answer(t, **k): replies9.append(t)
+    return SimpleNamespace(text=text, from_user=SimpleNamespace(id=5, username="u5"), answer=answer)
+st = St9()
+asyncio.run(bot.got_feedback(fb_msg("narx <tag> & 100k"), st))
+assert len(sent9) == len(admins), sent9
+assert "narx &lt;tag&gt; &amp; 100k" in sent9[0][1] and st.cleared
+sent9.clear(); replies9.clear(); st = St9()
+asyncio.run(bot.got_feedback(fb_msg(None), st))   # rasm/stiker: matn yo'q
+assert not sent9 and not st.cleared and "matn" in replies9[0], (sent9, replies9)
+print("9. Fikr bildirish OK")
+print("\nHAMMA TEST O'TDI ✅ (9)")
 

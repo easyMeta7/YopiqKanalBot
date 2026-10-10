@@ -651,10 +651,13 @@ async def cb_feedback(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Feedback.text)
 async def got_feedback(msg: Message, state: FSMContext) -> None:
+    if not msg.text:
+        await msg.answer("Iltimos, fikringizni matn ko'rinishida yozing.")
+        return
     await state.clear()
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(admin_id, f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{msg.text}")
+            await bot.send_message(admin_id, f"💭 Fikr bildirish – {msg.from_user.id} (@{msg.from_user.username or '-'}):\n\n{html.escape(msg.text)}")
         except Exception:
             pass
     await msg.answer("Rahmat! Fikringiz adminga yuborildi.")

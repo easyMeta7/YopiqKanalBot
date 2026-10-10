@@ -79,6 +79,15 @@ Railway shu `main` dan deploy qilinadi. `beta-1.1` shoxida so'nggi tuzatishlar `
 
 ## O'zgarishlar jurnali (yangisi tepada)
 
+### 2026-10-10, Claude Code (desktop): `cleanup-v1` shoxi (xatolar + tozalash, birma-bir)
+- Reja (foydalanuvchi bilan kelishilgan): 1) feedback, 2) HTML escape, 3) fon vazifalari, 4) broadcast RetryAfter,
+  5) eslatmalar (1 kundan kam qolsa faqat 🚨), 6) SQL filtrlari, 7) takroriy kodni birlashtirish. Har qadam alohida
+  commit; `main` ga push faqat foydalanuvchi aytganda. Bitta fayl (`bot.py`) saqlanadi.
+- 1-qadam: `got_feedback` fikr matnini `html.escape` qiladi (avval `<`/`&` bo'lsa Telegram rad etib, fikr adminga
+  yetmasdi, foydalanuvchiga esa "yuborildi" deyilardi). Matnsiz xabarda (rasm, stiker) matn so'raydi, holat saqlanadi.
+  Test: test_fixes.py 9-bo'lim.
+- Sinov: test_fixes.py, test_race.py, test_cards.py o'tdi.
+
 ### 2026-10-10, Claude Code (desktop)
 - Git holati: PR #2 ("Trading Journal v0.17" refactor, boshqa loyiha kodi) `main` ga qo'shilgan, keyin foydalanuvchi
   revert qilgan (ce0e830). Hozirgi kod f3491ff bilan aynan bir xil (`git diff f3491ff HEAD` bo'sh).
